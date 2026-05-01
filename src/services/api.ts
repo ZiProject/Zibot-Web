@@ -8,7 +8,7 @@ export interface BotInfo {
 }
 
 export async function fetchBotInfo(): Promise<BotInfo> {
-  const response = await fetch('http://api.ziji.best/');
+  const response = await fetch(process.env.BotAPI || 'https://api.ziji.best');
   if (!response.ok) {
     throw new Error('Failed to fetch bot info');
   }
