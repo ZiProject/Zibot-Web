@@ -83,8 +83,8 @@ module.exports.execute = (client) => {
 		const token = authHeader.split(" ")[1];
 		try {
 			const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-			const user = await ZiUser.findOne({ userID: decoded.id });
+			const db = useHooks.get("db");
+			const user = await db.ZiUser.findOne({ userID: decoded.id });
 
 			res.json({
 				id: decoded.id,
@@ -96,7 +96,127 @@ module.exports.execute = (client) => {
 				xp: user?.xp || 0,
 			});
 		} catch (error) {
+			console.error("Token error:", error.message);
 			res.status(401).send("Invalid token");
+		}
+	});
+
+	// --- NEW ROUTES FOR USER SETTINGS & GUILDS ---
+
+	// Middleware to verify JWT
+	const authenticate = (req, res, next) => {
+		const authHeader = req.headers.authorization;
+		if (!authHeader) return res.status(401).send("No token provided");
+		const token = authHeader.split(" ")[1];
+		try {
+			const decoded = jwt.verify(token, process.env.JWT_SECRET);
+			req.user = decoded;
+			next();
+		} catch (error) {
+			res.status(401).send("Invalid token");
+		}
+	};
+
+	// Get full user profile settings
+	router.get("/user/settings", authenticate, async (req, res) => {
+		try {
+			const db = useHooks.get("db");
+			const user = await db.ZiUser.findOne({ userID: req.user.id });
+			if (!user) return res.status(404).json({ error: "User not found" });
+			res.json(user);
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	});
+
+	// Update user preferences
+	router.post("/user/settings", authenticate, async (req, res) => {
+		try {
+			const db = useHooks.get("db");
+			const { lang, volume, color, genshinAutoClaim } = req.body;
+			
+			const updateData = {};
+			if (lang !== undefined) updateData.lang = lang;
+			if (volume !== undefined) updateData.volume = volume;
+			if (color !== undefined) updateData.color = color;
+			if (genshinAutoClaim !== undefined) updateData.genshinAutoClaim = genshinAutoClaim;
+			
+			await db.ZiUser.findOneAndUpdate({ userID: req.user.id }, { $set: updateData });
+			res.json({ success: true });
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	});
+
+	// Get list of manageable guilds
+	router.get("/user/guilds", authenticate, async (req, res) => {
+		try {
+			const db = useHooks.get("db");
+			const user = await db.ZiUser.findOne({ userID: req.user.id });
+			if (!user) return res.status(404).json({ error: "User not found" });
+			
+			// MANAGE_GUILD bit is 0x20 (32)
+			const manageableGuilds = user.guilds.filter(g => {
+				if (g.owner) return true;
+				const perms = BigInt(g.permissions || g.permissionsNew || "0");
+				return (perms & 32n) === 32n;
+			});
+
+			res.json(manageableGuilds);
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	});
+
+	// Get specific guild configuration
+	router.get("/guild/:guildId", authenticate, async (req, res) => {
+		try {
+			const db = useHooks.get("db");
+			const { guildId } = req.params;
+			
+			// Verify access
+			const user = await db.ZiUser.findOne({ userID: req.user.id });
+			const hasAccess = user?.guilds?.some(g => {
+				if (g.id !== guildId) return false;
+				if (g.owner) return true;
+				const perms = BigInt(g.permissions || g.permissionsNew || "0");
+				return (perms & 32n) === 32n;
+			});
+
+			if (!hasAccess) return res.status(403).json({ error: "Access denied" });
+
+			let guildConfig = await db.ZiGuild.findOne({ guildId });
+			if (!guildConfig) {
+				guildConfig = await db.ZiGuild.create({ guildId });
+			}
+			res.json(guildConfig);
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	});
+
+	// Update guild configuration
+	router.post("/guild/:guildId", authenticate, async (req, res) => {
+		try {
+			const db = useHooks.get("db");
+			const { guildId } = req.params;
+			const settings = req.body;
+
+			// Verify access
+			const user = await db.ZiUser.findOne({ userID: req.user.id });
+			const hasAccess = user?.guilds?.some(g => {
+				if (g.id !== guildId) return false;
+				if (g.owner) return true;
+				const perms = BigInt(g.permissions || g.permissionsNew || "0");
+				return (perms & 32n) === 32n;
+			});
+
+			if (!hasAccess) return res.status(403).json({ error: "Access denied" });
+
+			await db.ZiGuild.findOneAndUpdate({ guildId }, { $set: settings }, { upsert: true });
+			res.json({ success: true });
+		} catch (error) {
+			res.status(500).json({ error: error.message });
 		}
 	});
 	server.use("/", router);

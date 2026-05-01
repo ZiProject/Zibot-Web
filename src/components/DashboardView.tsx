@@ -1,7 +1,7 @@
 
 import { motion } from "motion/react";
 import { ReactNode, useState, useEffect } from "react";
-import { Activity, ShieldCheck, Hash, UserCircle, Globe, Terminal, Info, AlertCircle } from "lucide-react";
+import { Activity, ShieldCheck, Hash, UserCircle, Globe, Terminal, Info, AlertCircle, Settings, Server, Save, ChevronRight, Volume2, Palette, Languages, MoreHorizontal } from "lucide-react";
 import { BotInfo } from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -11,27 +11,97 @@ interface DashboardViewProps {
   error: string | null;
 }
 
+type Tab = 'status' | 'settings' | 'servers';
+
 export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [user, setUser] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('status');
+  const [guilds, setGuilds] = useState<any[]>([]);
+  const [userSettings, setUserSettings] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [selectedGuild, setSelectedGuild] = useState<any>(null);
+  const [guildSettings, setGuildSettings] = useState<any>(null);
+
+  const token = localStorage.getItem('ziji-token');
+  const baseUrl = import.meta.env.VITE_BotAPI || '';
 
   useEffect(() => {
-    const token = localStorage.getItem('ziji-token');
     if (token) {
-      const baseUrl = import.meta.env.VITE_BotAPI || '';
       fetch(`${baseUrl}/user/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => res.json())
       .then(data => setUser(data))
-      .catch((err) => {
-        console.error('Dashboard: Failed to fetch user info', err);
-        // localStorage.removeItem('ziji-token');
-      });
+      .catch((err) => console.error('Dashboard: Failed to fetch user info', err));
+
+      fetch(`${baseUrl}/user/settings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => setUserSettings(data))
+      .catch((err) => console.error('Dashboard: Failed to fetch user settings', err));
+
+      fetch(`${baseUrl}/user/guilds`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => setGuilds(data))
+      .catch((err) => console.error('Dashboard: Failed to fetch user guilds', err));
     }
-  }, []);
+  }, [token, baseUrl]);
+
+  const fetchGuildSettings = async (guildId: string) => {
+    try {
+      const res = await fetch(`${baseUrl}/guild/${guildId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setGuildSettings(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const saveGuildSettings = async () => {
+    if (!token || !selectedGuild) return;
+    setSaving(true);
+    try {
+      await fetch(`${baseUrl}/guild/${selectedGuild.id}`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(guildSettings)
+      });
+      alert('Guild settings saved!');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveUserSettings = async () => {
+    if (!token) return;
+    setSaving(true);
+    try {
+      await fetch(`${baseUrl}/user/settings`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(userSettings)
+      });
+      alert('Settings saved!');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -62,6 +132,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 
   return (
     <div className="pt-32 pb-24 px-6 max-w-7xl mx-auto">
+      {/* Header Section */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -90,140 +161,321 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        <StatCard 
-          icon={<Terminal className="text-discord" />} 
-          label={t('botName')} 
-          value={botInfo?.clientName || "Ziji"} 
-        />
-        <StatCard 
-          icon={<UserCircle className="text-vibrant-pink" />} 
-          label={t('botId')} 
-          value={botInfo?.clientId || "..."} 
-          subValue="Click to copy"
-        />
-        <StatCard 
-          icon={<ShieldCheck className="text-blue-400" />} 
-          label={t('status')} 
-          value={botInfo?.status || "OK"} 
-          accent={botInfo?.status === "OK" ? "text-green-500" : "text-yellow-500"}
-        />
-        <StatCard 
-          icon={<Globe className="text-orange-400" />} 
-          label={t('serverRegion')} 
-          value="Singapore" 
-          subValue="24ms Latency"
-        />
+      {/* Tabs Selection */}
+      <div className="flex flex-wrap gap-2 mb-12 p-1.5 glass rounded-3xl w-fit">
+        <button 
+          onClick={() => setActiveTab('status')}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'status' ? 'bg-discord text-white shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+        >
+          <Activity className="w-4 h-4" /> {t('status')}
+        </button>
+        <button 
+          onClick={() => setActiveTab('settings')}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-discord text-white shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+        >
+          <Settings className="w-4 h-4" /> {t('settings')}
+        </button>
+        <button 
+          onClick={() => setActiveTab('servers')}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'servers' ? 'bg-discord text-white shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+        >
+          <Server className="w-4 h-4" /> {t('guildManagement')}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* User Info Section */}
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
-          className="lg:col-span-5 glass rounded-[2.5rem] p-10 flex flex-col gap-8"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-2xl tracking-tight flex items-center gap-3">
-              <UserCircle className="w-7 h-7 text-discord" />
-              {t('account')}
-            </h3>
-            {!user && (
-              <a 
-                href={`${import.meta.env.VITE_BotAPI || ''}/auth/discord/login`} 
-                className="text-[10px] uppercase tracking-widest font-bold text-discord hover:text-white transition-colors"
-              >
-                {t('login')}
-              </a>
-            )}
+      <div className="min-h-[400px]">
+        {activeTab === 'status' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              <StatCard 
+                icon={<Terminal className="text-discord" />} 
+                label={t('botName')} 
+                value={botInfo?.clientName || "Ziji"} 
+              />
+              <StatCard 
+                icon={<UserCircle className="text-vibrant-pink" />} 
+                label={t('botId')} 
+                value={botInfo?.clientId || "..."} 
+                subValue="Click to copy"
+              />
+              <StatCard 
+                icon={<ShieldCheck className="text-blue-400" />} 
+                label={t('status')} 
+                value={botInfo?.status || "OK"} 
+                accent={botInfo?.status === "OK" ? "text-green-500" : "text-yellow-500"}
+              />
+              <StatCard 
+                icon={<Globe className="text-orange-400" />} 
+                label={t('serverRegion')} 
+                value="Singapore" 
+                subValue="24ms Latency"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-5 glass rounded-[2.5rem] p-10 flex flex-col gap-8">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-2xl tracking-tight flex items-center gap-3">
+                    <UserCircle className="w-7 h-7 text-discord" />
+                    {t('account')}
+                  </h3>
+                  {!user && (
+                    <a href={`${baseUrl}/auth/discord/login`} className="text-[10px] uppercase tracking-widest font-bold text-discord hover:text-white transition-colors">
+                      {t('login')}
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-6">
+                  {user ? (
+                    <div className="relative group">
+                      <img src={`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`} alt={user.username} className="w-20 h-20 rounded-[2rem] border-2 border-discord group-hover:rotate-6 transition-transform" />
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 rounded-[2rem] bg-zinc-900 border border-white/5 flex items-center justify-center text-3xl font-black text-zinc-700">U</div>
+                  )}
+                  <div>
+                    <p className="font-black text-2xl tracking-tight">{user ? user.username : t('guest')}</p>
+                    <p className="text-zinc-600 font-mono text-sm">{user ? `#${user.id.slice(-4)}` : '#guest_1337'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
+                    <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('level')}</span>
+                    <span className="font-mono text-xl font-bold text-discord">{user ? user.level : 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
+                    <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('balance')}</span>
+                    <span className="font-mono text-xl font-bold text-yellow-500">{user ? user.coin : 0} 🪙</span>
+                  </div>
+                </div>
+                {!user && (
+                  <div className="p-4 bg-discord/5 border border-discord/10 rounded-2xl">
+                    <p className="text-[10px] font-bold text-discord text-center uppercase tracking-[0.1em]">{t('syncPrompt')}</p>
+                  </div>
+                )}
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-7 glass rounded-[2.5rem] p-10 flex flex-col">
+                <h3 className="font-extrabold text-2xl tracking-tight mb-8 flex items-center gap-3">
+                  <Info className="w-7 h-7 text-vibrant-pink" />
+                  {t('opsLog')}
+                </h3>
+                <div className="space-y-8 flex-grow">
+                  <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem]">
+                    <p className="text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-4">{t('apiMsg')}</p>
+                    <blockquote className="text-2xl font-bold italic border-l-4 border-vibrant-pink pl-6 py-2 tracking-tight">
+                      "{botInfo?.content || "Welcome to Ziji Engine"}"
+                    </blockquote>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
+                      <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3"><Hash className="w-3 h-3" /> {t('version')}</div>
+                      <p className="font-mono text-2xl font-bold">2.4.1-STABLE</p>
+                    </div>
+                    <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
+                      <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3"><Hash className="w-3 h-3" /> {t('runtime')}</div>
+                      <p className="font-mono text-2xl font-bold">NODE 20 LTS</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-8 flex items-center gap-4 p-5 bg-discord/10 rounded-2xl border border-discord/20">
+                  <div className="p-2 bg-discord rounded-lg text-white"><Terminal className="w-5 h-5" /></div>
+                  <p className="text-xs font-bold text-discord uppercase tracking-wider">{t('clusterStable')}</p>
+                </div>
+              </motion.div>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-6">
-            {user ? (
-               <div className="relative group">
-               <img 
-                 src={`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`} 
-                 alt={user.username} 
-                 className="w-20 h-20 rounded-[2rem] border-2 border-discord group-hover:rotate-6 transition-transform"
-               />
-             </div>
+        )}
+
+        {/* User Settings Tab */}
+        {activeTab === 'settings' && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-[2.5rem] p-10 max-w-3xl mx-auto">
+            <h3 className="font-extrabold text-2xl tracking-tight mb-8">{t('userSettings')}</h3>
+            
+            {!userSettings ? (
+              <p className="text-zinc-500 text-center py-12">{t('syncPrompt')}</p>
             ) : (
-              <div className="w-20 h-20 rounded-[2rem] bg-zinc-900 border border-white/5 flex items-center justify-center text-3xl font-black text-zinc-700">
-                U
+              <div className="space-y-8">
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 text-sm font-bold text-zinc-400 uppercase tracking-widest">
+                    <Languages className="w-4 h-4 text-discord" /> {t('language')}
+                  </label>
+                  <div className="flex gap-4">
+                    {['vi', 'en', 'ja'].map(l => (
+                      <button 
+                        key={l}
+                        onClick={() => setUserSettings({...userSettings, lang: l})}
+                        className={`px-6 py-3 rounded-2xl font-bold border-2 transition-all ${userSettings.lang === l ? 'bg-discord border-discord text-white shadow-glow' : 'border-white/5 bg-white/5 text-zinc-500'}`}
+                      >
+                        {l.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 text-sm font-bold text-zinc-400 uppercase tracking-widest">
+                    <Volume2 className="w-4 h-4 text-discord" /> {t('volume')} ({userSettings.volume}%)
+                  </label>
+                  <input 
+                    type="range" 
+                    min="0" max="100" 
+                    value={userSettings.volume}
+                    onChange={(e) => setUserSettings({...userSettings, volume: parseInt(e.target.value)})}
+                    className="w-full accent-discord"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 text-sm font-bold text-zinc-400 uppercase tracking-widest">
+                    <Palette className="w-4 h-4 text-discord" /> {t('color')}
+                  </label>
+                  <select 
+                    value={userSettings.color}
+                    onChange={(e) => setUserSettings({...userSettings, color: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 font-bold outline-none focus:border-discord transition-colors"
+                  >
+                    <option value="Random">Random</option>
+                    <option value="Blue">Blue</option>
+                    <option value="Pink">Pink</option>
+                    <option value="Gold">Gold</option>
+                  </select>
+                </div>
+
+                <div className="pt-8">
+                  <button 
+                    onClick={saveUserSettings}
+                    disabled={saving}
+                    className="flex items-center justify-center gap-2 w-full py-5 bg-discord hover:brightness-110 disabled:opacity-50 text-white rounded-[1.5rem] font-black text-lg transition-all shadow-xl hover:glow"
+                  >
+                    {saving ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : <Save className="w-5 h-5" />}
+                    {t('save')}
+                  </button>
+                </div>
               </div>
             )}
-            <div>
-              <p className="font-black text-2xl tracking-tight">{user ? user.username : t('guest')}</p>
-              <p className="text-zinc-600 font-mono text-sm">{user ? `#${user.id.slice(-4)}` : '#guest_1337'}</p>
-            </div>
-          </div>
+          </motion.div>
+        )}
 
-          <div className="grid grid-cols-1 gap-4">
-            <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
-              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('level')}</span>
-              <span className="font-mono text-xl font-bold text-discord">{user ? user.level : 0}</span>
-            </div>
-            <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
-              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('balance')}</span>
-              <span className="font-mono text-xl font-bold text-yellow-500">{user ? user.coin : 0} 🪙</span>
-            </div>
-          </div>
-
-          {!user && (
-            <div className="p-4 bg-discord/5 border border-discord/10 rounded-2xl">
-              <p className="text-[10px] font-bold text-discord text-center uppercase tracking-[0.1em]">
-                {t('syncPrompt')}
-              </p>
-            </div>
-          )}
-        </motion.div>
-
-        {/* Detailed Bot Stats */}
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="lg:col-span-7 glass rounded-[2.5rem] p-10 flex flex-col"
-        >
-          <h3 className="font-extrabold text-2xl tracking-tight mb-8 flex items-center gap-3">
-            <Info className="w-7 h-7 text-vibrant-pink" />
-            {t('opsLog')}
-          </h3>
-
-          <div className="space-y-8 flex-grow">
-            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-              <p className="text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-4">{t('apiMsg')}</p>
-              <blockquote className="text-2xl font-bold italic border-l-4 border-vibrant-pink pl-6 py-2 tracking-tight">
-                "{botInfo?.content || "Welcome to Ziji Engine"}"
-              </blockquote>
+        {/* Guild Management Tab */}
+        {activeTab === 'servers' && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="font-extrabold text-2xl tracking-tight">{selectedGuild ? selectedGuild.name : t('guildManagement')}</h3>
+              {selectedGuild && (
+                <button 
+                  onClick={() => { setSelectedGuild(null); setGuildSettings(null); }}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold transition-all"
+                >
+                  Back
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
-                <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3">
-                  <Hash className="w-3 h-3" /> {t('version')}
-                </div>
-                <p className="font-mono text-2xl font-bold">2.4.1-STABLE</p>
+            {!selectedGuild ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {guilds.map(guild => (
+                  <div key={guild.id} className="glass rounded-[2rem] p-6 hover:bg-white/[0.05] transition-all group">
+                    <div className="flex items-center gap-4 mb-6">
+                      <img 
+                        src={guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png'} 
+                        alt={guild.name} 
+                        className="w-14 h-14 rounded-2xl border border-white/10 shadow-lg group-hover:scale-105 transition-transform"
+                      />
+                      <div className="flex-grow overflow-hidden">
+                        <h4 className="font-black text-lg truncate group-hover:text-discord transition-colors">{guild.name}</h4>
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">ID: {guild.id}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => { setSelectedGuild(guild); fetchGuildSettings(guild.id); }}
+                      className="flex items-center justify-center gap-2 w-full py-3 bg-white/5 hover:bg-discord text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                    >
+                      {t('manage')} <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <a 
+                  href={botInfo?.inviteUrl || "#"} 
+                  target="_blank"
+                  rel="noreferrer"
+                  className="glass rounded-[2rem] p-6 border-dashed border-2 border-white/10 flex flex-col items-center justify-center gap-3 hover:border-discord/50 transition-all group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-discord group-hover:text-white transition-all text-zinc-400">
+                    <MoreHorizontal className="w-6 h-6" />
+                  </div>
+                  <p className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">{t('invite')}</p>
+                </a>
               </div>
-              <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
-                <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3">
-                  <Hash className="w-3 h-3" /> {t('runtime')}
-                </div>
-                <p className="font-mono text-2xl font-bold">NODE 20 LTS</p>
-              </div>
-            </div>
-          </div>
+            ) : (
+              <div className="glass rounded-[2.5rem] p-10 max-w-3xl mx-auto space-y-8">
+                {!guildSettings ? (
+                   <div className="flex justify-center py-10">
+                     <div className="w-10 h-10 border-4 border-discord/10 border-t-discord rounded-full animate-spin"></div>
+                   </div>
+                ) : (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="flex flex-col gap-4 p-6 bg-white/[0.02] border border-white/5 rounded-3xl">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                           <div className="p-3 bg-discord/10 rounded-2xl text-discord">
+                             <ShieldCheck className="w-5 h-5" />
+                           </div>
+                           <span className="font-black text-sm uppercase tracking-widest">{t('autoRole')}</span>
+                         </div>
+                         <button 
+                            onClick={() => setGuildSettings({...guildSettings, autoRole: {...guildSettings.autoRole, enabled: !guildSettings.autoRole?.enabled}})}
+                            className={`w-12 h-6 rounded-full transition-colors relative ${guildSettings.autoRole?.enabled ? 'bg-discord' : 'bg-zinc-800'}`}
+                         >
+                            <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${guildSettings.autoRole?.enabled ? 'translate-x-6' : ''}`} />
+                         </button>
+                       </div>
+                       {guildSettings.autoRole?.enabled && (
+                         <div className="mt-4">
+                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Role IDs (Comma separated)</p>
+                            <input 
+                              type="text" 
+                              value={guildSettings.autoRole.roleIds?.join(', ') || ''}
+                              onChange={(e) => setGuildSettings({...guildSettings, autoRole: {...guildSettings.autoRole, roleIds: e.target.value.split(',').map(s => s.trim())}})}
+                              className="w-full bg-black/20 border border-white/5 rounded-xl p-3 font-mono text-sm outline-none focus:border-discord/50 transition-colors"
+                            />
+                         </div>
+                       )}
+                    </div>
 
-          <div className="mt-8 flex items-center gap-4 p-5 bg-discord/10 rounded-2xl border border-discord/20">
-            <div className="p-2 bg-discord rounded-lg text-white">
-              <Terminal className="w-5 h-5" />
-            </div>
-            <p className="text-xs font-bold text-discord uppercase tracking-wider">
-              {t('clusterStable')}
-            </p>
-          </div>
-        </motion.div>
+                    <div className="flex flex-col gap-4 p-6 bg-white/[0.02] border border-white/5 rounded-3xl">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                           <div className="p-3 bg-vibrant-pink/10 rounded-2xl text-vibrant-pink">
+                             <Activity className="w-5 h-5" />
+                           </div>
+                           <span className="font-black text-sm uppercase tracking-widest">{t('joinToCreate')}</span>
+                         </div>
+                         <button 
+                            onClick={() => setGuildSettings({...guildSettings, joinToCreate: {...guildSettings.joinToCreate, enabled: !guildSettings.joinToCreate?.enabled}})}
+                            className={`w-12 h-6 rounded-full transition-colors relative ${guildSettings.joinToCreate?.enabled ? 'bg-vibrant-pink' : 'bg-zinc-800'}`}
+                         >
+                            <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${guildSettings.joinToCreate?.enabled ? 'translate-x-6' : ''}`} />
+                         </button>
+                       </div>
+                    </div>
+
+                    <div className="pt-8">
+                      <button 
+                        onClick={saveGuildSettings}
+                        disabled={saving}
+                        className="flex items-center justify-center gap-2 w-full py-5 bg-discord hover:brightness-110 disabled:opacity-50 text-white rounded-[1.5rem] font-black text-lg transition-all shadow-xl hover:glow"
+                      >
+                        {saving ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : <Save className="w-5 h-5" />}
+                        {t('save')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
       </div>
     </div>
   );

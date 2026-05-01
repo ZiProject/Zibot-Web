@@ -83,6 +83,18 @@ export const translations: Translations = {
   terms: { vi: 'Điều khoản dịch vụ', en: 'Terms of Service', ja: '利用規約' },
   privacy: { vi: 'Chính sách bảo mật', en: 'Privacy Policy', ja: 'プライバシーポリシー' },
   backToHome: { vi: 'Quay lại trang chủ', en: 'Back to home', ja: 'ホームに戻る' },
+
+  // New Translations
+  settings: { vi: 'Cài đặt', en: 'Settings', ja: '設定' },
+  userSettings: { vi: 'Cài đặt cá nhân', en: 'User Settings', ja: 'ユーザー設定' },
+  save: { vi: 'Lưu thay đổi', en: 'Save Changes', ja: '変更を保存' },
+  language: { vi: 'Ngôn ngữ bot', en: 'Bot Language', ja: 'ボットの言語' },
+  volume: { vi: 'Âm lượng mặc định', en: 'Default Volume', ja: 'デフォルト音量' },
+  guildManagement: { vi: 'Quản lý máy chủ', en: 'Server Management', ja: 'サーバー管理' },
+  manage: { vi: 'Quản lý', en: 'Manage', ja: '管理' },
+  invite: { vi: 'Mời bot', en: 'Invite Bot', ja: 'ボットを招待' },
+  autoRole: { vi: 'Tự động cấp vai trò', en: 'Auto Role', ja: 'オートロール' },
+  joinToCreate: { vi: 'Phòng chờ (Join to Create)', en: 'Join to Create', ja: 'Join to Create' },
 };
 
 interface LanguageContextType {
