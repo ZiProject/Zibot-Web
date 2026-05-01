@@ -1,38 +1,41 @@
 
 import { motion } from "motion/react";
-import { Music, Sword, Coins, ShieldCheck, Heart, Radio, ListMusic, Gamepad2 } from "lucide-react";
+import { Music, Quote, Coins, ShieldCheck, Heart, Gamepad2 } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 
 export function Features() {
+  const { t } = useLanguage();
+
   const features = [
     {
       icon: <Music className="w-8 h-8 text-blue-400" />,
-      title: "Âm nhạc chất lượng cao",
-      desc: "Phát nhạc từ YouTube, Spotify, SoundCloud với độ trễ cực thấp và âm thanh sống động."
+      title: t('musicTitle'),
+      desc: t('musicDesc')
     },
     {
-      icon: <Sword className="w-8 h-8 text-red-400" />,
-      title: "Hệ thống RPG & Game",
-      desc: "Tham gia vào các cuộc phiêu lưu, đánh boss và thu thập vật phẩm cùng bạn bè."
+      icon: <Quote className="w-8 h-8 text-red-400" />,
+      title: t('quoteTitle'),
+      desc: t('quoteDesc')
     },
     {
       icon: <Coins className="w-8 h-8 text-yellow-400" />,
-      title: "Nền kinh tế (Economy)",
-      desc: "Hệ thống tiền tệ đầy đủ với công việc, đánh bạc và cửa hàng vật phẩm ảo."
+      title: t('ecoTitle'),
+      desc: t('ecoDesc')
     },
     {
       icon: <ShieldCheck className="w-8 h-8 text-green-400" />,
-      title: "Quản trị máy chủ",
-      desc: "Tự động hóa việc lọc tin nhắn, quản lý vai trò và bảo vệ máy chủ khỏi spam."
+      title: t('modTitle'),
+      desc: t('modDesc')
     },
     {
       icon: <Heart className="w-8 h-8 text-pink-400" />,
-      title: "Giải trí & Anime",
-      desc: "Tìm kiếm thông tin anime, waifu và các lệnh vui vẻ cho cộng đồng."
+      title: t('funTitle'),
+      desc: t('funDesc')
     },
     {
       icon: <Gamepad2 className="w-8 h-8 text-purple-400" />,
-      title: "Trò chơi tương tác",
-      desc: "Các trò chơi mini ngay trong Discord để gắn kết các thành viên."
+      title: t('gameTitle'),
+      desc: t('gameDesc')
     }
   ];
 
@@ -40,10 +43,14 @@ export function Features() {
     <section className="py-24 px-6 max-w-7xl mx-auto border-t border-white/5">
       <div className="text-center mb-20">
         <h2 className="text-4xl md:text-6xl font-extrabold mb-6 tracking-tighter leading-none">
-          Mô-đun hóa sự <span className="text-gradient">Phát triển</span>
+          {t('featTitle').split(' ').map((word, i, arr) => (
+            <span key={i} className={i === arr.length - 1 ? 'text-gradient' : ''}>
+              {word}{' '}
+            </span>
+          ))}
         </h2>
         <p className="text-zinc-500 max-w-2xl mx-auto font-medium text-lg">
-          Ziji được xây dựng với kiến trúc hiện đại, hỗ trợ hàng loạt tính năng mạnh mẽ cho mọi quy mô cộng đồng.
+          {t('featSub')}
         </p>
       </div>
 

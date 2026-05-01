@@ -12,11 +12,14 @@ import { BotInfo, fetchBotInfo } from "./services/api";
 import { Features } from "./components/Features";
 import { TermsView, PrivacyView } from "./components/LegalViews";
 
+import { LanguageProvider, useLanguage } from "./context/LanguageContext";
+
 function AppContent() {
   const [botInfo, setBotInfo] = useState<BotInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
+  const { t } = useLanguage();
 
   // Scroll to top on route change
   useEffect(() => {
@@ -71,8 +74,8 @@ function AppContent() {
             <span>API: api.ziji.best</span>
           </div>
           <div className="flex gap-8">
-            <Link to="/terms" className="hover:text-white transition-colors">Điều khoản</Link>
-            <Link to="/privacy" className="hover:text-white transition-colors">Bảo mật</Link>
+            <Link to="/terms" className="hover:text-white transition-colors">{t('terms')}</Link>
+            <Link to="/privacy" className="hover:text-white transition-colors">{t('privacy')}</Link>
             <a 
               href="https://github.com/ZiProject/Ziji-bot-discord" 
               target="_blank" 
@@ -90,9 +93,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <LanguageProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </LanguageProvider>
   );
 }
 

@@ -4,12 +4,15 @@ import { ReactNode } from "react";
 import { Sparkles, MessageSquare, Zap, Shield } from "lucide-react";
 import { BotInfo } from "../services/api";
 import { Link } from "react-router-dom";
+import { useLanguage } from "../context/LanguageContext";
 
 interface HeroProps {
   botInfo: BotInfo | null;
 }
 
 export function Hero({ botInfo }: HeroProps) {
+  const { t } = useLanguage();
+
   return (
     <section className="relative pt-32 pb-20 px-6 overflow-hidden">
       {/* Background blobs */}
@@ -39,7 +42,12 @@ export function Hero({ botInfo }: HeroProps) {
           transition={{ delay: 0.2 }}
           className="text-6xl md:text-8xl font-extrabold tracking-tighter mb-6 leading-[1.05]"
         >
-          Nâng tầm cộng đồng <span className="text-gradient">Discord</span> của bạn
+          {t('heroTitle').split('Discord').map((part, i, arr) => (
+            <span key={i}>
+              {part}
+              {i < arr.length - 1 && <span className="text-gradient">Discord</span>}
+            </span>
+          ))}
         </motion.h1>
 
         <motion.p 
@@ -48,8 +56,7 @@ export function Hero({ botInfo }: HeroProps) {
           transition={{ delay: 0.3 }}
           className="text-zinc-400 text-lg md:text-xl max-w-2xl mb-10 leading-relaxed font-medium"
         >
-          Ziji là bot Discord đa năng, hiệu suất cao được thiết kế để phát triển linh hoạt. 
-          Từ âm nhạc giải trí đến quản trị hệ thống - Ziji xử lý mọi thứ mượt mà.
+          {t('heroSub')}
         </motion.p>
 
         <motion.div 
@@ -64,13 +71,13 @@ export function Hero({ botInfo }: HeroProps) {
             rel="noreferrer"
             className="px-10 py-4 bg-white text-black hover:bg-zinc-200 rounded-2xl font-bold text-lg transition-all shadow-xl"
           >
-            Mời Ziji Bot
+            {t('inviteBot')}
           </a>
           <Link 
             to="/dashboard"
             className="px-10 py-4 glass hover:bg-white/10 text-white rounded-2xl font-bold text-lg transition-all"
           >
-            Mở Dashboard
+            {t('openDashboard')}
           </Link>
         </motion.div>
 
@@ -80,10 +87,10 @@ export function Hero({ botInfo }: HeroProps) {
           transition={{ delay: 0.8 }}
           className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-12 w-full max-w-4xl"
         >
-          <HeroFeature icon={<Zap />} label="Tốc độ" sub="Phản hồi siêu tốc" />
-          <HeroFeature icon={<Shield />} label="Bảo mật" sub="An tâm quản trị" />
-          <HeroFeature icon={<Sparkles />} label="Đa năng" sub="Hơn 140+ lệnh" />
-          <HeroFeature icon={<MessageSquare />} label="Hỗ trợ" sub="Cộng đồng 85k+" />
+          <HeroFeature icon={<Zap />} label={t('speed')} sub={t('speedDesc')} />
+          <HeroFeature icon={<Shield />} label={t('security')} sub={t('securityDesc')} />
+          <HeroFeature icon={<Sparkles />} label={t('versatility')} sub={t('versatilityDesc')} />
+          <HeroFeature icon={<MessageSquare />} label={t('support')} sub={t('supportDesc')} />
         </motion.div>
       </div>
     </section>

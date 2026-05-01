@@ -1,14 +1,23 @@
 
-import { motion } from "motion/react";
-import { Bot, LayoutDashboard, Github, Menu, X } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Bot, LayoutDashboard, Github, Menu, X, Languages } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { useLanguage, Language } from "../context/LanguageContext";
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showLang, setShowLang] = useState(false);
+  const { language, setLanguage, t } = useLanguage();
 
   const activeStyles = "text-white border-b-2 border-discord pb-1";
   const inactiveStyles = "text-zinc-400";
+
+  const languages: { code: Language; label: string; flag: string }[] = [
+    { code: 'vi', label: 'Tiếng Việt', flag: '🇻🇳' },
+    { code: 'en', label: 'English', flag: '🇺🇸' },
+    { code: 'ja', label: '日本語', flag: '🇯🇵' },
+  ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4">
@@ -29,14 +38,51 @@ export function Navigation() {
             to="/"
             className={({ isActive }) => `text-sm font-semibold uppercase tracking-widest transition-colors hover:text-white ${isActive ? activeStyles : inactiveStyles}`}
           >
-            Trang chủ
+            {t('home')}
           </NavLink>
           <NavLink 
             to="/dashboard"
             className={({ isActive }) => `text-sm font-semibold uppercase tracking-widest transition-colors hover:text-white ${isActive ? activeStyles : inactiveStyles}`}
           >
-            Bảng điều khiển
+            {t('dashboard')}
           </NavLink>
+          
+          {/* Language Switcher */}
+          <div className="relative">
+            <button 
+              onClick={() => setShowLang(!showLang)}
+              className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors uppercase text-xs font-bold tracking-widest"
+            >
+              <Languages className="w-4 h-4" />
+              {language}
+            </button>
+            
+            <AnimatePresence>
+              {showLang && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute top-full right-0 mt-4 glass rounded-2xl p-2 min-w-[140px] overflow-hidden"
+                >
+                  {languages.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => {
+                        setLanguage(lang.code);
+                        setShowLang(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-2 text-xs font-bold rounded-xl transition-colors ${language === lang.code ? 'bg-discord text-white' : 'text-zinc-400 hover:bg-white/5'}`}
+                    >
+                      <span>{lang.label}</span>
+                      <span>{lang.flag}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <a 
             href="https://github.com/ZiProject/Ziji-bot-discord" 
             target="_blank" 
@@ -50,7 +96,7 @@ export function Navigation() {
             className="flex items-center gap-2 px-6 py-2 bg-discord hover:brightness-110 text-white rounded-full text-sm font-bold transition-all hover:glow"
           >
             <LayoutDashboard className="w-4 h-4" />
-            Vào Dashboard
+            {t('enterDashboard')}
           </Link>
         </div>
 
@@ -67,8 +113,22 @@ export function Navigation() {
           animate={{ opacity: 1, y: 0 }}
           className="md:hidden absolute top-20 left-6 right-6 glass rounded-2xl p-6 flex flex-col gap-4"
         >
-          <Link to="/" onClick={() => setIsOpen(false)} className="text-left py-2 text-lg font-medium">Trang chủ</Link>
-          <Link to="/dashboard" onClick={() => setIsOpen(false)} className="text-left py-2 text-lg font-medium">Bảng điều khiển</Link>
+          <Link to="/" onClick={() => setIsOpen(false)} className="text-left py-2 text-lg font-medium">{t('home')}</Link>
+          <Link to="/dashboard" onClick={() => setIsOpen(false)} className="text-left py-2 text-lg font-medium">{t('dashboard')}</Link>
+          <div className="flex items-center gap-4 py-2">
+            {languages.map((lang) => (
+              <button
+                key={lang.code}
+                onClick={() => {
+                  setLanguage(lang.code);
+                  setIsOpen(false);
+                }}
+                className={`p-2 rounded-xl text-xl ${language === lang.code ? 'bg-discord' : 'bg-white/5'}`}
+              >
+                {lang.flag}
+              </button>
+            ))}
+          </div>
           <a href="https://github.com/ZiProject/Ziji-bot-discord" target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 text-lg font-medium text-zinc-400">
             <Github className="w-5 h-5" /> GitHub
           </a>

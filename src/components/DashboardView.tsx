@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { ReactNode } from "react";
 import { Activity, ShieldCheck, Hash, UserCircle, Globe, Terminal, Info, AlertCircle } from "lucide-react";
 import { BotInfo } from "../services/api";
+import { useLanguage } from "../context/LanguageContext";
 
 interface DashboardViewProps {
   botInfo: BotInfo | null;
@@ -11,11 +12,13 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
+  const { t } = useLanguage();
+
   if (loading) {
     return (
       <div className="pt-32 px-6 flex flex-col items-center justify-center min-h-[60vh]">
         <div className="w-12 h-12 border-4 border-discord/20 border-t-discord rounded-full animate-spin"></div>
-        <p className="mt-4 text-zinc-400 font-bold uppercase tracking-widest text-xs">Đang đồng bộ dữ liệu...</p>
+        <p className="mt-4 text-zinc-400 font-bold uppercase tracking-widest text-xs">...</p>
       </div>
     );
   }
@@ -26,13 +29,13 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         <div className="p-6 bg-red-500/10 rounded-3xl text-red-500 mb-6 glow">
           <AlertCircle className="w-16 h-16" />
         </div>
-        <h2 className="text-3xl font-extrabold mb-3 tracking-tight">Lỗi kết nối API</h2>
-        <p className="text-zinc-400 max-w-md font-medium leading-relaxed">Không thể tải thông tin từ hệ thống Ziji. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.</p>
+        <h2 className="text-3xl font-extrabold mb-3 tracking-tight">API Error</h2>
+        <p className="text-zinc-400 max-w-md font-medium leading-relaxed">{error}</p>
         <button 
           onClick={() => window.location.reload()}
           className="mt-8 px-10 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl font-bold transition-all hover:scale-105"
         >
-          Thử lại
+          Retry
         </button>
       </div>
     );
@@ -48,41 +51,47 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         <div>
           <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-bold text-discord uppercase tracking-widest mb-4">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> 
-            System Online
+            {t('systemOnline')}
           </div>
-          <h2 className="text-5xl font-extrabold tracking-tighter">Bảng điều khiển <span className="text-discord">Ziji</span></h2>
-          <p className="text-zinc-500 font-medium mt-2">Giám sát trạng thái và vận hành hệ thống theo thời gian thực.</p>
+          <h2 className="text-5xl font-extrabold tracking-tighter">
+            {t('dashboardTitle').split(' ').map((word, i, arr) => (
+              <span key={i} className={i === arr.length - 1 ? 'text-discord' : ''}>
+                {word}{' '}
+              </span>
+            ))}
+          </h2>
+          <p className="text-zinc-500 font-medium mt-2">{t('dashboardSub')}</p>
         </div>
         <div className="flex flex-col md:items-end gap-2">
           <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 text-green-500 rounded-2xl text-xs font-black uppercase tracking-widest border border-green-500/20">
             <Activity className="w-4 h-4" />
-            Vận hành ổn định
+            {t('stableOperation')}
           </div>
-          <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Cập nhật: v2.4.1-stable</span>
+          <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">{t('lastUpdate')}</span>
         </div>
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         <StatCard 
           icon={<Terminal className="text-discord" />} 
-          label="Tên Bot" 
+          label={t('botName')} 
           value={botInfo?.clientName || "Ziji"} 
         />
         <StatCard 
           icon={<UserCircle className="text-vibrant-pink" />} 
-          label="ID Bot" 
+          label={t('botId')} 
           value={botInfo?.clientId || "..."} 
-          subValue="Click để sao chép"
+          subValue="Click to copy"
         />
         <StatCard 
           icon={<ShieldCheck className="text-blue-400" />} 
-          label="Trạng thái" 
+          label={t('status')} 
           value={botInfo?.status || "OK"} 
           accent={botInfo?.status === "OK" ? "text-green-500" : "text-yellow-500"}
         />
         <StatCard 
           icon={<Globe className="text-orange-400" />} 
-          label="Máy chủ" 
+          label={t('serverRegion')} 
           value="Singapore" 
           subValue="24ms Latency"
         />
@@ -99,9 +108,9 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
           <div className="flex items-center justify-between">
             <h3 className="font-extrabold text-2xl tracking-tight flex items-center gap-3">
               <UserCircle className="w-7 h-7 text-discord" />
-              Tài khoản
+              {t('account')}
             </h3>
-            <button className="text-[10px] uppercase tracking-widest font-bold text-zinc-600 hover:text-white transition-colors">Đăng nhập</button>
+            <button className="text-[10px] uppercase tracking-widest font-bold text-zinc-600 hover:text-white transition-colors">{t('login')}</button>
           </div>
           
           <div className="flex items-center gap-6">
@@ -109,25 +118,25 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
               U
             </div>
             <div>
-              <p className="font-black text-2xl tracking-tight">Khách</p>
+              <p className="font-black text-2xl tracking-tight">{t('guest')}</p>
               <p className="text-zinc-600 font-mono text-sm">#guest_1337</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
             <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
-              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">Cấp độ</span>
+              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('level')}</span>
               <span className="font-mono text-xl font-bold text-discord">0</span>
             </div>
             <div className="flex justify-between items-center p-5 bg-white/[0.02] border border-white/5 rounded-2xl">
-              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">Số dư</span>
+              <span className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">{t('balance')}</span>
               <span className="font-mono text-xl font-bold text-yellow-500">0 🪙</span>
             </div>
           </div>
 
           <div className="p-4 bg-discord/5 border border-discord/10 rounded-2xl">
             <p className="text-[10px] font-bold text-discord text-center uppercase tracking-[0.1em]">
-              Vui lòng đăng nhập Discord để đồng bộ dữ liệu thực tế
+              {t('syncPrompt')}
             </p>
           </div>
         </motion.div>
@@ -141,12 +150,12 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         >
           <h3 className="font-extrabold text-2xl tracking-tight mb-8 flex items-center gap-3">
             <Info className="w-7 h-7 text-vibrant-pink" />
-            Nhật ký vận hành
+            {t('opsLog')}
           </h3>
 
           <div className="space-y-8 flex-grow">
             <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-              <p className="text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-4">Thông điệp API:</p>
+              <p className="text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-4">{t('apiMsg')}</p>
               <blockquote className="text-2xl font-bold italic border-l-4 border-vibrant-pink pl-6 py-2 tracking-tight">
                 "{botInfo?.content || "Welcome to Ziji Engine"}"
               </blockquote>
@@ -155,13 +164,13 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
                 <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3">
-                  <Hash className="w-3 h-3" /> Phiên bản
+                  <Hash className="w-3 h-3" /> {t('version')}
                 </div>
                 <p className="font-mono text-2xl font-bold">2.4.1-STABLE</p>
               </div>
               <div className="p-6 border border-white/5 rounded-2xl bg-zinc-900/30">
                 <div className="flex items-center gap-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest mb-3">
-                  <Hash className="w-3 h-3" /> Runtime
+                  <Hash className="w-3 h-3" /> {t('runtime')}
                 </div>
                 <p className="font-mono text-2xl font-bold">NODE 20 LTS</p>
               </div>
@@ -173,7 +182,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
               <Terminal className="w-5 h-5" />
             </div>
             <p className="text-xs font-bold text-discord uppercase tracking-wider">
-              Cụm máy chủ Asia-Northeast vận hành ổn định 99.98%
+              {t('clusterStable')}
             </p>
           </div>
         </motion.div>
