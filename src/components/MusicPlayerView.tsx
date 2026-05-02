@@ -5,7 +5,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Volume2, 
   Repeat, Shuffle, Music, Users, ListMusic, 
   Search, SlidersHorizontal, LayoutGrid, Heart,
-  ShieldCheck, Activity, Trash2, MoreVertical
+  LockKeyhole, Activity, Trash2, MoreVertical,Baseline 
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -75,6 +75,7 @@ export function MusicPlayerView() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [lyrics, setLyrics] = useState<string | null>(null);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const wsUrl = (import.meta.env.VITE_BotAPI || '').replace('http', 'ws');
   const token = localStorage.getItem('ziji-token');
@@ -175,8 +176,8 @@ export function MusicPlayerView() {
 
   return (
     <div className="fixed inset-0 top-16 bg-[#09090b] flex overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 flex flex-col p-6 gap-8 hidden md:flex">
+      {/* Sidebar - Desktop Only */}
+      <div className="w-64 border-r border-white/5 flex flex-col p-6 gap-8 hidden lg:flex shrink-0">
         <div className="flex items-center gap-3">
            <div className="w-10 h-10 bg-discord rounded-xl flex items-center justify-center shadow-glow">
              <Music className="w-6 h-6 text-white" />
@@ -212,9 +213,9 @@ export function MusicPlayerView() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-grow flex flex-col min-w-0">
-        <div className="p-6 md:p-8 flex-grow overflow-y-auto custom-scrollbar">
-          <div className="max-w-4xl mx-auto space-y-10">
+      <div className="flex-grow flex flex-col min-w-0 pb-20 md:pb-0">
+        <div className="p-4 md:p-8 flex-grow overflow-y-auto custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-8 md:space-y-10">
             {/* Search Bar */}
             <div className="flex items-center gap-4 sticky top-0 bg-[#09090b] py-2 z-20">
                <div className="relative flex-grow">
@@ -244,30 +245,30 @@ export function MusicPlayerView() {
                 </div>
                 <div className="grid gap-2">
                   {searchResults.map((track, idx) => (
-                    <div 
-                      key={idx} 
-                      className="group flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5"
-                    >
-                      <img src={track.thumbnail} alt={track.title} className="w-12 h-12 rounded-xl object-cover" />
-                      <div className="flex-grow overflow-hidden">
-                        <h4 className="font-bold text-sm truncate">{track.title}</h4>
-                        <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate">{track.author}</p>
+                      <div 
+                        key={idx} 
+                        className="group flex items-center gap-3 md:gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5"
+                      >
+                        <img src={track.thumbnail} alt={track.title} className="w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover" />
+                        <div className="flex-grow overflow-hidden">
+                          <h4 className="font-bold text-xs md:text-sm truncate">{track.title}</h4>
+                          <p className="text-[9px] md:text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate">{track.author}</p>
+                        </div>
+                        <div className="flex gap-1 md:gap-2">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); sendCommand('play', { trackUrl: track.url }); }}
+                            className="p-2 bg-discord rounded-lg text-white transition-all transform scale-90 hover:scale-100"
+                          >
+                            <Play className="w-3.5 h-3.5 md:w-4 md:h-4 fill-current" />
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); sendCommand('Playnext', { trackUrl: track.url, TrackPosition: 1 }); }}
+                            className="p-2 bg-white/10 rounded-lg text-white hover:bg-white/20 transition-all text-[9px] md:text-[10px] font-black uppercase tracking-widest px-2 md:px-3"
+                          >
+                            Next
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); sendCommand('play', { trackUrl: track.url }); }}
-                          className="p-2 bg-discord rounded-lg text-white transition-all transform scale-90 hover:scale-100"
-                        >
-                          <Play className="w-4 h-4 fill-current" />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); sendCommand('Playnext', { trackUrl: track.url, TrackPosition: 1 }); }}
-                          className="p-2 bg-white/10 rounded-lg text-white hover:bg-white/20 transition-all text-[10px] font-black uppercase tracking-widest px-3"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
                   ))}
                 </div>
               </div>
@@ -305,8 +306,8 @@ export function MusicPlayerView() {
 
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
-                     <h3 className="font-black text-3xl tracking-tight">Up Next</h3>
-                     <div className="flex gap-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">
+                     <h3 className="font-black text-2xl md:text-3xl tracking-tight">Up Next</h3>
+                     <div className="flex gap-4 text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-widest">
                        <span>{stats?.tracks || 0} tracks</span>
                      </div>
                   </div>
@@ -316,23 +317,23 @@ export function MusicPlayerView() {
                       stats.queue.map((track, idx) => (
                         <div 
                           key={idx} 
-                          className="group flex items-center gap-4 p-4 rounded-3xl hover:bg-white/[0.03] transition-all cursor-pointer border border-transparent hover:border-white/5"
+                          className="group flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-3xl hover:bg-white/[0.03] transition-all cursor-pointer border border-transparent hover:border-white/5"
                         >
-                          <span className="w-6 text-center font-bold text-zinc-600 group-hover:text-discord transition-colors">{idx + 1}</span>
-                          <img src={track.thumbnail} alt={track.title} className="w-12 h-12 rounded-xl object-cover border border-white/5 shadow-lg" />
+                          <span className="w-4 md:w-6 text-center font-bold text-xs md:text-sm text-zinc-600 group-hover:text-discord transition-colors">{idx + 1}</span>
+                          <img src={track.thumbnail} alt={track.title} className="w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border border-white/5 shadow-lg" />
                           <div className="flex-grow overflow-hidden">
-                            <h4 className="font-bold text-sm truncate">{track.title}</h4>
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate">{track.author}</p>
+                            <h4 className="font-bold text-xs md:text-sm truncate">{track.title}</h4>
+                            <p className="text-[9px] md:text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate">{track.author}</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                             <span className="text-[10px] font-mono text-zinc-500 opacity-50 group-hover:hidden">{formatDisplayDuration(track.duration)}</span>
+                          <div className="flex items-center gap-1 md:gap-2">
+                             <span className="text-[9px] md:text-[10px] font-mono text-zinc-500 opacity-50 group-hover:hidden">{formatDisplayDuration(track.duration)}</span>
                              <button 
                                onClick={(e) => { e.stopPropagation(); sendCommand('DelTrack', { TrackPosition: idx + 1 }); }}
-                               className="hidden group-hover:flex p-2 text-zinc-500 hover:text-red-500 transition-colors"
+                               className="md:hidden group-hover:flex flex p-2 text-zinc-500 hover:text-red-500 transition-colors"
                              >
-                               <Trash2 className="w-4 h-4" />
+                               <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                              </button>
-                             <button className="hidden group-hover:flex p-2 text-zinc-500 hover:text-white transition-colors">
+                             <button className="hidden md:group-hover:flex p-2 text-zinc-500 hover:text-white transition-colors">
                                <MoreVertical className="w-4 h-4" />
                              </button>
                           </div>
@@ -352,18 +353,55 @@ export function MusicPlayerView() {
         </div>
       </div>
 
-      {/* Now Playing Fixed Right Panel */}
-      <div className="w-80 lg:w-[450px] border-l border-white/5 flex flex-col hidden md:flex bg-gradient-to-b from-white/[0.02] to-transparent">
-        <div className="p-8 flex flex-col h-full gap-8">
+      {/* Mini Player - Mobile Only */}
+        <div 
+          className="md:hidden fixed bottom-0 left-0 right-0 glass-dark border-t border-white/5 p-3 flex items-center gap-3 z-40"
+          onClick={() => setIsPlayerOpen(true)}
+        >
+          <div className="relative w-12 h-12 shrink-0">
+            <img src={stats?.track?.thumbnail} alt="" className="w-full h-full rounded-xl object-cover" />
+            <div className="absolute inset-0 bg-discord opacity-20 blur-xl"></div>
+          </div>
+          <div className="flex-grow min-w-0">
+            <h4 className="font-bold text-sm truncate">{stats?.track?.title || 'Not Playing'}</h4>
+            <p className="text-[10px] font-bold text-zinc-500 uppercase truncate">{stats?.track?.author || 'Melody Engine'}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={(e) => { e.stopPropagation(); sendCommand('pause'); }}
+              className="p-3 bg-white/5 rounded-xl text-white"
+            >
+              {stats?.paused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); sendCommand('skip'); }}
+              className="p-3 text-zinc-400"
+            >
+              <SkipForward className="w-4 h-4 fill-current" />
+            </button>
+          </div>
+          <div className="absolute top-0 left-0 h-[2px] bg-discord shadow-glow" style={{ width: `${progress}%` }} />
+        </div>
+
+      {/* Now Playing Panel */}
+      <div 
+        className={`shrink-0 border-l border-white/5 flex flex-col transition-all duration-500 ease-out z-50
+          ${isPlayerOpen ? 'fixed inset-0 bg-[#09090b]' : 'hidden md:flex md:relative md:w-80 lg:w-[450px]'}
+          bg-gradient-to-b from-white/[0.02] to-transparent`}
+      >
+        <div className="p-6 md:p-8 flex flex-col h-full gap-6 md:gap-8 overflow-y-auto">
            <div className="flex items-center justify-between">
               <button 
-                onClick={() => setShowLyrics(!showLyrics)}
-                className={`p-3 rounded-xl transition-all ${showLyrics ? 'bg-discord text-white' : 'bg-white/5 text-zinc-500 hover:text-white'}`}
+                onClick={() => isPlayerOpen ? setIsPlayerOpen(false) : setShowLyrics(!showLyrics)}
+                className={`p-3 rounded-xl transition-all ${showLyrics && !isPlayerOpen ? 'bg-discord text-white' : 'bg-white/5 text-zinc-500 hover:text-white'}`}
               >
-                <SlidersHorizontal className="w-5 h-5" />
+                {isPlayerOpen ? <SkipBack className="w-5 h-5 -rotate-90" /> : <SlidersHorizontal className="w-5 h-5" />}
               </button>
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Now Playing</p>
-              <button className="p-3 bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-all">
+              <button 
+                onClick={() => setShowLyrics(!showLyrics)}
+                className={`p-3 bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-all md:block ${isPlayerOpen ? 'block' : 'hidden'}`}
+              >
                 <LayoutGrid className="w-5 h-5" />
               </button>
            </div>
@@ -390,26 +428,26 @@ export function MusicPlayerView() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="flex-grow flex flex-col gap-8 justify-center"
                 >
-                  <div className="relative group perspective-1000">
+                   <div className="relative group perspective-1000">
                     <div className="absolute inset-0 bg-discord/20 blur-[80px] rounded-full opacity-50 group-hover:opacity-100 transition-opacity"></div>
                     <img 
                       src={stats?.track?.thumbnail || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop'} 
                       alt="Album Art" 
-                      className="relative w-full aspect-square rounded-[3rem] shadow-2xl border border-white/10 z-10 transform-gpu transition-all duration-700 group-hover:rotate-y-12"
+                      className="relative w-full aspect-square rounded-[2rem] md:rounded-[3rem] shadow-2xl border border-white/10 z-10 transform-gpu transition-all duration-700 group-hover:rotate-y-12"
                     />
                   </div>
 
-                  <div className="space-y-2 text-center px-4">
+                  <div className="space-y-1 md:space-y-2 text-center px-4">
                     <div className="overflow-hidden whitespace-nowrap">
                        <motion.h2 
-                        className="font-black text-3xl tracking-tighter inline-block"
+                        className="font-black text-2xl md:text-3xl tracking-tighter inline-block"
                         animate={stats?.track?.title?.length && stats.track.title.length > 25 ? { x: [0, -100, 0] } : {}}
                         transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
                        >
                          {stats?.track?.title || 'Ziji Music Engine'}
                        </motion.h2>
                     </div>
-                    <p className="text-sm font-bold text-zinc-500 uppercase tracking-[0.2em]">{stats?.track?.author || 'Standby Mode'}</p>
+                    <p className="text-xs md:text-sm font-bold text-zinc-500 uppercase tracking-[0.2em]">{stats?.track?.author || 'Standby Mode'}</p>
                   </div>
                 </motion.div>
              )}
@@ -454,14 +492,14 @@ export function MusicPlayerView() {
                   className={`p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors ${stats?.autoPlay ? 'text-green-500' : 'text-zinc-600'}`}
                   title="AutoPlay"
                  >
-                   <Activity className="w-5 h-5" />
+                   <Baseline className="w-5 h-5" />
                  </button>
                  <button 
                   onClick={() => sendCommand('Lock')} 
                   className={`p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors ${stats?.lockStatus ? 'text-vibrant-pink' : 'text-zinc-600'}`}
                   title="Lock Player"
                  >
-                   <ShieldCheck className="w-5 h-5" />
+                   <LockKeyhole  className="w-5 h-5" />
                  </button>
 
                  <div className="flex items-center gap-4 mx-2">
