@@ -10,7 +10,11 @@ export interface BotInfo {
 }
 
 export async function fetchBotInfo(): Promise<BotInfo> {
-  const response = await fetch(import.meta.env.VITE_BotAPI || 'https://api.ziji.best');
+  const response = await fetch(import.meta.env.VITE_BotAPI || 'https://api.ziji.best', {
+    headers: {
+      'ngrok-skip-browser-warning': 'true',
+    },
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch bot info');
   }
