@@ -1,4 +1,3 @@
-
 import { motion, AnimatePresence } from "motion/react";
 import { Bot, LayoutDashboard, Github, Menu, X, Languages, User } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -18,7 +17,8 @@ export function Navigation() {
       const baseUrl = import.meta.env.VITE_BotAPI || '';
       fetch(`${baseUrl}/user/me`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
         }
       })
       .then(res => res.json())

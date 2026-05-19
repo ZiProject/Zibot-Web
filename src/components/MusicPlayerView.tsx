@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -121,19 +120,66 @@ export function MusicPlayerView() {
   useEffect(() => {
     if (stats?.track?.title) {
       fetch(`${baseUrl}/music/lyrics?q=${encodeURIComponent(stats.track.title)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       })
       .then(res => res.json())
       .then(data => setLyrics(data?.lyrics || "Lyrics not found"))
       .catch(() => setLyrics("Lyrics error"));
     }
   }, [stats?.track?.title, baseUrl, token]);
-
+  // Thêm vào trong component MusicPlayerView
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+  
+    const { track } = stats || {};
+  
+    if (track) {
+      // 1. Cập nhật thông tin bài hát
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.author,
+        artwork: [
+          { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+  
+      // 2. Cập nhật trạng thái phát
+      navigator.mediaSession.playbackState = stats?.paused ? "paused" : "playing";
+  
+      // 3. Đăng ký các action handlers (Điều khiển từ hệ thống)
+      navigator.mediaSession.setActionHandler('play', () => sendCommand('pause'));
+      navigator.mediaSession.setActionHandler('pause', () => sendCommand('pause'));
+      navigator.mediaSession.setActionHandler('previoustrack', () => sendCommand('back'));
+      navigator.mediaSession.setActionHandler('nexttrack', () => sendCommand('skip'));
+      
+      // Cập nhật vị trí (seek) nếu hệ thống hỗ trợ
+      if (navigator.mediaSession.setPositionState) {
+        navigator.mediaSession.setPositionState({
+          duration: parseDuration(track.duration) / 1000,
+          playbackRate: 1,
+          position: (stats.timestamp || 0) / 1000
+        });
+      }
+    }
+  
+    // Cleanup
+    return () => {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = null;
+      }
+    };
+  }, [stats?.track, stats?.paused, stats?.timestamp]);
   const handleSearch = async () => {
     if (!searchQuery) return;
     try {
       const res = await fetch(`${baseUrl}/music/search?q=${encodeURIComponent(searchQuery)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       setSearchResults(data.results || []);

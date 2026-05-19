@@ -1,4 +1,3 @@
-
 import { motion } from "motion/react";
 import { ReactNode, useState, useEffect } from "react";
 import { Activity, ShieldCheck, Hash, UserCircle, Globe, Terminal, Info, AlertCircle, Settings, Server, Save, ChevronRight, Volume2, Palette, Languages, MoreHorizontal } from "lucide-react";
@@ -32,21 +31,30 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
   useEffect(() => {
     if (token) {
       fetch(`${baseUrl}/user/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       })
       .then(res => res.json())
       .then(data => setUser(data))
       .catch((err) => console.error('Dashboard: Failed to fetch user info', err));
 
       fetch(`${baseUrl}/user/settings`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       })
       .then(res => res.json())
       .then(data => setUserSettings(data))
       .catch((err) => console.error('Dashboard: Failed to fetch user settings', err));
 
       fetch(`${baseUrl}/user/guilds`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       })
       .then(res => res.json())
       .then(data => setGuilds(data))
@@ -57,7 +65,10 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
   const fetchGuildSettings = async (guildId: string) => {
     try {
       const res = await fetch(`${baseUrl}/guild/${guildId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       setGuildSettings(data);
@@ -73,7 +84,10 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
   const fetchAutoResponders = async (guildId: string) => {
     try {
       const res = await fetch(`${baseUrl}/guild/${guildId}/autoresponder`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       setAutoResponders(data);
@@ -85,7 +99,10 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
   const fetchWelcomeSettings = async (guildId: string) => {
     try {
       const res = await fetch(`${baseUrl}/guild/${guildId}/welcome`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       setWelcomeSettings(data);
@@ -102,7 +119,8 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify(newResponder)
       });
@@ -123,7 +141,8 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify(welcomeSettings)
       });
@@ -143,7 +162,8 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify(guildSettings)
       });
@@ -163,7 +183,8 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify(userSettings)
       });
