@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -121,7 +120,10 @@ export function MusicPlayerView() {
   useEffect(() => {
     if (stats?.track?.title) {
       fetch(`${baseUrl}/music/lyrics?q=${encodeURIComponent(stats.track.title)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       })
       .then(res => res.json())
       .then(data => setLyrics(data?.lyrics || "Lyrics not found"))
@@ -133,7 +135,10 @@ export function MusicPlayerView() {
     if (!searchQuery) return;
     try {
       const res = await fetch(`${baseUrl}/music/search?q=${encodeURIComponent(searchQuery)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       setSearchResults(data.results || []);
