@@ -39,6 +39,8 @@ export function MusicPlayerView() {
   const [authenticated, setAuthenticated] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Thêm hằng số này bên ngoài Component hoặc trong component
+  const SILENT_SOUND_URL = "data:audio/wav;base64,UklGRqAWAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YV4WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   const parseDuration = (val: string | number): number => {
     if (!val) return 0;
     if (typeof val === 'number') {
@@ -58,7 +60,18 @@ export function MusicPlayerView() {
     if (typeof val === 'string' && val.includes(':')) return val;
     return formatTime(parseDuration(val));
   };
-
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    audioRef.current = new Audio(SILENT_SOUND_URL);
+    audioRef.current.loop = true;
+    
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
   // Calculate progress percentage with auto-detect duration format
   useEffect(() => {
     if (stats?.track?.duration) {
@@ -132,45 +145,78 @@ export function MusicPlayerView() {
   }, [stats?.track?.title, baseUrl, token]);
   // Thêm vào trong component MusicPlayerView
   useEffect(() => {
-    if (!('mediaSession' in navigator)) return;
-  
-    const { track } = stats || {};
-  
-    if (track) {
-      // 1. Cập nhật thông tin bài hát
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: track.title,
-        artist: track.author,
-        artwork: [
-          { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' }
-        ]
-      });
-  
-      // 2. Cập nhật trạng thái phát
-      navigator.mediaSession.playbackState = stats?.paused ? "paused" : "playing";
-  
-      // 3. Đăng ký các action handlers (Điều khiển từ hệ thống)
-      navigator.mediaSession.setActionHandler('play', () => sendCommand('pause'));
-      navigator.mediaSession.setActionHandler('pause', () => sendCommand('pause'));
-      navigator.mediaSession.setActionHandler('previoustrack', () => sendCommand('back'));
-      navigator.mediaSession.setActionHandler('nexttrack', () => sendCommand('skip'));
-      
-      // Cập nhật vị trí (seek) nếu hệ thống hỗ trợ
-      if (navigator.mediaSession.setPositionState) {
-        navigator.mediaSession.setPositionState({
-          duration: parseDuration(track.duration) / 1000,
-          playbackRate: 1,
-          position: (stats.timestamp || 0) / 1000
+    if (!('mediaSession' in navigator) || !stats?.track) return;
+
+    const { track, paused } = stats;
+
+    // Kích hoạt Audio "im lặng" để trình duyệt hiện Media Control
+    if (audioRef.current) {
+      if (!paused) {
+        audioRef.current.play().catch(() => {
+          console.log("Cần tương tác người dùng để kích hoạt Media Session");
         });
+      } else {
+        audioRef.current.pause();
       }
     }
-  
-    // Cleanup
-    return () => {
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = null;
+
+    // 1. Cập nhật Metadata
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title,
+      artist: track.author,
+      album: 'Ziji Melody',
+      artwork: [
+        { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' },
+        { src: track.thumbnail, sizes: '192x192', type: 'image/jpeg' }
+      ]
+    });
+
+    // 2. Trạng thái Playback
+    navigator.mediaSession.playbackState = paused ? "paused" : "playing";
+
+    // 3. Đăng ký Action Handlers
+    const actions: [MediaSessionAction, () => void][] = [
+      ['play', () => sendCommand('pause')],
+      ['pause', () => sendCommand('pause')],
+      ['previoustrack', () => sendCommand('back')],
+      ['nexttrack', () => sendCommand('skip')],
+      ['stop', () => sendCommand('stop')],
+      ['seekbackward', () => {
+         const newPos = Math.max(0, (stats.timestamp || 0) - 10000);
+         sendCommand('seek', { position: newPos });
+      }],
+      ['seekforward', () => {
+         const duration = parseDuration(track.duration);
+         const newPos = Math.min(duration, (stats.timestamp || 0) + 10000);
+         sendCommand('seek', { position: newPos });
+      }]
+    ];
+
+    actions.forEach(([action, handler]) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (error) {
+        console.warn(`Action ${action} không được hỗ trợ`);
       }
-    };
+    });
+
+    // 4. Cập nhật vị trí thanh progress (Position State)
+    // Cần bọc trong try-catch vì thông số duration/position phải hợp lệ
+    try {
+      const duration = parseDuration(track.duration) / 1000;
+      const position = (stats.timestamp || 0) / 1000;
+      
+      if (duration > 0 && position <= duration && 'setPositionState' in navigator.mediaSession) {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: 1,
+          position: position
+        });
+      }
+    } catch (e) {
+      console.error("Lỗi cập nhật PositionState:", e);
+    }
+
   }, [stats?.track, stats?.paused, stats?.timestamp]);
   const handleSearch = async () => {
     if (!searchQuery) return;
