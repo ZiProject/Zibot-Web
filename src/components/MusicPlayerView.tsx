@@ -89,10 +89,13 @@ export function MusicPlayerView() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
-  const wsUrl = (import.meta.env.VITE_BotAPI || '').replace('http', 'ws');
   const token = localStorage.getItem('ziji-token');
   const baseUrl = import.meta.env.VITE_BotAPI || '';
-
+  const wsUrl =
+  	baseUrl
+  		.replace(/^https:\/\//, 'wss://')
+  		.replace(/^http:\/\//, 'ws://') + '/ws';
+  
   useEffect(() => {
     if (!token) {
       setError("Please login to access the music player.");
@@ -122,6 +125,7 @@ export function MusicPlayerView() {
     socket.onclose = () => {
       setConnected(false);
       setAuthenticated(false);
+      setTimeout(connect, 3000);
     };
 
     setWs(socket);
@@ -296,10 +300,10 @@ export function MusicPlayerView() {
         <div className="mt-auto">
            <div className="p-4 glass rounded-2xl bg-discord/10 border border-discord/20">
               <p className="text-[10px] font-black text-discord uppercase tracking-widest mb-1">Status</p>
-              <p className="text-sm font-bold text-white flex items-center gap-2">
+              <div className="text-sm font-bold text-white flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                {connected ? 'Live Sync' : 'Reconnecting...'}
-              </p>
+                <span>{connected ? 'Live Sync' : 'Reconnecting...'}</span>
+              </div>
            </div>
         </div>
       </div>
