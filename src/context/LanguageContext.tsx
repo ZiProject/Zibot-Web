@@ -18,7 +18,7 @@ export const translations: Translations = {
   
   // Hero
   heroTitle: { vi: 'Nâng tầm cộng đồng Discord của bạn', en: 'Elevate your Discord community', ja: 'あなたのDiscordコミュニティを高める' },
-  heroSub: { vi: 'Ziji là bot Discord đa năng, hiệu suất cao được thiết kế để phát triển linh hoạt. Từ âm nhạc giải trí đến quản trị hệ thống - Ziji xử lý mọi thứ mượt mà.', en: 'Ziji is a versatile, high-performance Discord bot designed for modular growth. From entertainment music to system administration - Ziji handles everything smoothly.', ja: 'Zijiは、モジュール式の成長のために設計された多目的で高性能なDiscordボットです。エンターテインメントミュージックからシステム管理まで、Zijiはすべてをスムーズに処理します。' },
+  heroSub: { vi: 'là bot Discord đa năng, hiệu suất cao được thiết kế để phát triển linh hoạt. Từ âm nhạc giải trí đến quản trị hệ thống - Ziji xử lý mọi thứ mượt mà.', en: 'is a versatile, high-performance Discord bot designed for modular growth. From entertainment music to system administration - Ziji handles everything smoothly.', ja: 'は、モジュール式の成長のために設計された多目的で高性能なDiscordボットです。エンターテインメントミュージックからシステム管理まで、Zijiはすべてをスムーズに処理します。' },
   inviteBot: { vi: 'Mời Ziji Bot', en: 'Invite Ziji Bot', ja: 'Zijiボットを招待' },
   openDashboard: { vi: 'Đăng nhập', en: 'Login', ja: 'ログイン' },
   

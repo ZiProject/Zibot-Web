@@ -4,7 +4,13 @@
  */
 
 import { useState, useEffect } from "react";
-import { HashRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
+import {
+  HashRouter as Router,
+  Routes,
+  Route,
+  Link,
+  useLocation,
+} from "react-router-dom";
 import { Navigation } from "./components/Navigation";
 import { Hero } from "./components/Hero";
 import { DashboardView } from "./components/DashboardView";
@@ -47,23 +53,29 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-vibrant-bg flex flex-col">
-      <Navigation />
-      
+      <Navigation botInfo={botInfo} />
+
       <main className="flex-grow">
         <Routes>
-          <Route path="/" element={
-            <>
-              <Hero botInfo={botInfo} />
-              <Features />
-            </>
-          } />
-          <Route path="/dashboard" element={
-            <DashboardView 
-              botInfo={botInfo} 
-              loading={loading} 
-              error={error} 
-            />
-          } />
+          <Route
+            path="/"
+            element={
+              <>
+                <Hero botInfo={botInfo} />
+                <Features />
+              </>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <DashboardView
+                botInfo={botInfo}
+                loading={loading}
+                error={error}
+              />
+            }
+          />
           <Route path="/dashboard/music" element={<MusicPlayerView />} />
           <Route path="/terms" element={<TermsView />} />
           <Route path="/privacy" element={<PrivacyView />} />
@@ -78,12 +90,16 @@ function AppContent() {
             <span>API: api.ziji.best</span>
           </div>
           <div className="flex gap-8">
-            <Link to="/terms" className="hover:text-white transition-colors">{t('terms')}</Link>
-            <Link to="/privacy" className="hover:text-white transition-colors">{t('privacy')}</Link>
-            <a 
-              href="https://github.com/ZiProject/Ziji-bot-discord" 
-              target="_blank" 
-              rel="noreferrer" 
+            <Link to="/terms" className="hover:text-white transition-colors">
+              {t("terms")}
+            </Link>
+            <Link to="/privacy" className="hover:text-white transition-colors">
+              {t("privacy")}
+            </Link>
+            <a
+              href="https://github.com/ZiProject/Ziji-bot-discord"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-white transition-colors"
             >
               GitHub
@@ -104,4 +120,3 @@ export default function App() {
     </LanguageProvider>
   );
 }
-
