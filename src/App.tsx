@@ -76,7 +76,10 @@ function AppContent() {
               />
             }
           />
-          <Route path="/dashboard/music" element={<MusicPlayerView />} />
+          <Route
+            path="/dashboard/music"
+            element={<MusicPlayerView botInfo={botInfo} />}
+          />
           <Route path="/terms" element={<TermsView />} />
           <Route path="/privacy" element={<PrivacyView />} />
           <Route path="/login-success" element={<LoginSuccess />} />

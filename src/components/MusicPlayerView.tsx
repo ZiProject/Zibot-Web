@@ -22,6 +22,7 @@ import {
   Baseline,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { BotInfo } from "../services/api";
 
 interface Track {
   title: string;
@@ -45,8 +46,11 @@ interface PlayerStats {
   queue: Track[];
   related: Track[];
 }
+interface HeroProps {
+  botInfo: BotInfo | null;
+}
 
-export function MusicPlayerView() {
+export function MusicPlayerView({ botInfo }: HeroProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -205,7 +209,7 @@ export function MusicPlayerView() {
         },
       )
         .then((res) => res.json())
-        .then((data) => setLyrics(data?.lyrics || "Lyrics not found"))
+        .then((data) => setLyrics(data?.lyrics?.text || "Lyrics not found"))
         .catch(() => setLyrics("Lyrics error"));
     }
   }, [stats?.track?.title, baseUrl, token]);
@@ -232,8 +236,22 @@ export function MusicPlayerView() {
       artist: track.author,
       album: "Ziji Melody",
       artwork: [
-        { src: track.thumbnail, sizes: "512x512", type: "image/jpeg" },
-        { src: track.thumbnail, sizes: "192x192", type: "image/jpeg" },
+        {
+          src:
+            track.thumbnail ||
+            botInfo?.avatars ||
+            "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=512&auto=format&fit=crop",
+          sizes: "512x512",
+          type: "image/jpeg",
+        },
+        {
+          src:
+            track.thumbnail ||
+            botInfo?.avatars ||
+            "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=192&auto=format&fit=crop",
+          sizes: "192x192",
+          type: "image/jpeg",
+        },
       ],
     });
 
@@ -709,6 +727,7 @@ export function MusicPlayerView() {
                   <img
                     src={
                       stats?.track?.thumbnail ||
+                      botInfo?.avatars ||
                       "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop"
                     }
                     alt="Album Art"
