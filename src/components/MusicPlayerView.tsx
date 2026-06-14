@@ -4,6 +4,7 @@ import {
   apiUrl,
   getWsUrl,
   isDiscordActivity,
+  proxyImage,
 } from "../services/discordActivity";
 import {
   Play,
@@ -240,18 +241,20 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
       album: "Ziji Melody",
       artwork: [
         {
-          src:
+          src: proxyImage(
             track.thumbnail ||
-            botInfo?.avatars ||
-            "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=512&auto=format&fit=crop",
+              botInfo?.avatars ||
+              "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=512&auto=format&fit=crop",
+          ),
           sizes: "512x512",
           type: "image/jpeg",
         },
         {
-          src:
+          src: proxyImage(
             track.thumbnail ||
-            botInfo?.avatars ||
-            "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=192&auto=format&fit=crop",
+              botInfo?.avatars ||
+              "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=192&auto=format&fit=crop",
+          ),
           sizes: "192x192",
           type: "image/jpeg",
         },
@@ -455,7 +458,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
                       className="group flex items-center gap-3 md:gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5"
                     >
                       <img
-                        src={track.thumbnail}
+                        src={proxyImage(track.thumbnail)}
                         alt={track.title}
                         className="w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover"
                       />
@@ -519,7 +522,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
                         >
                           <div className="relative w-16 h-16 shrink-0">
                             <img
-                              src={track.thumbnail}
+                              src={proxyImage(track.thumbnail)}
                               alt={track.title}
                               className="w-full h-full rounded-2xl object-cover"
                             />
@@ -562,7 +565,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
                             {idx + 1}
                           </span>
                           <img
-                            src={track.thumbnail}
+                            src={proxyImage(track.thumbnail)}
                             alt={track.title}
                             className="w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border border-white/5 shadow-lg"
                           />
@@ -622,7 +625,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
       >
         <div className="relative w-12 h-12 shrink-0">
           <img
-            src={stats?.track?.thumbnail}
+            src={proxyImage(stats?.track?.thumbnail)}
             alt=""
             className="w-full h-full rounded-xl object-cover"
           />
@@ -728,11 +731,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
                 <div className="relative group perspective-1000">
                   <div className="absolute inset-0 bg-discord/20 blur-[80px] rounded-full opacity-50 group-hover:opacity-100 transition-opacity"></div>
                   <img
-                    src={
+                    src={proxyImage(
                       stats?.track?.thumbnail ||
-                      botInfo?.avatars ||
-                      "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop"
-                    }
+                        botInfo?.avatars ||
+                        "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop",
+                    )}
                     alt="Album Art"
                     className="relative w-full aspect-square rounded-[2rem] md:rounded-[3rem] shadow-2xl border border-white/10 z-10 transform-gpu transition-all duration-700 group-hover:rotate-y-12"
                   />
