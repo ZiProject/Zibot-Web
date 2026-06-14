@@ -7,7 +7,7 @@ import {
   Shield,
   ChevronDown,
 } from "lucide-react";
-import { BotInfo } from "../services/api";
+import { BotInfo } from "../services/discordActivity";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 

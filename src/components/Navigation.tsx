@@ -11,7 +11,7 @@ import {
 import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useLanguage, Language } from "../context/LanguageContext";
-import { BotInfo } from "../services/discordActivity";
+import { BotInfo, apiUrl } from "../services/discordActivity";
 interface HeroProps {
   botInfo: BotInfo | null;
 }
@@ -26,8 +26,7 @@ export function Navigation({ botInfo }: HeroProps) {
   useEffect(() => {
     const token = localStorage.getItem("ziji-token");
     if (token) {
-      const baseUrl = import.meta.env.VITE_BotAPI || "";
-      fetch(`${baseUrl}/user/me`, {
+      fetch(apiUrl("/user/me"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",

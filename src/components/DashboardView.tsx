@@ -18,7 +18,7 @@ import {
   Languages,
   MoreHorizontal,
 } from "lucide-react";
-import { BotInfo } from "../services/api";
+import { BotInfo, apiUrl } from "../services/discordActivity";
 import { useLanguage } from "../context/LanguageContext";
 
 interface DashboardViewProps {
@@ -46,11 +46,10 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
   });
 
   const token = localStorage.getItem("ziji-token");
-  const baseUrl = import.meta.env.VITE_BotAPI || "";
 
   useEffect(() => {
     if (token) {
-      fetch(`${baseUrl}/user/me`, {
+      fetch(apiUrl("/user/me"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -62,7 +61,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
           console.error("Dashboard: Failed to fetch user info", err),
         );
 
-      fetch(`${baseUrl}/user/settings`, {
+      fetch(apiUrl("/user/settings"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -74,7 +73,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
           console.error("Dashboard: Failed to fetch user settings", err),
         );
 
-      fetch(`${baseUrl}/user/guilds`, {
+      fetch(apiUrl("/user/guilds"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -86,11 +85,11 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
           console.error("Dashboard: Failed to fetch user guilds", err),
         );
     }
-  }, [token, baseUrl]);
+  }, [token, apiUrl]);
 
   const fetchGuildSettings = async (guildId: string) => {
     try {
-      const res = await fetch(`${baseUrl}/guild/${guildId}`, {
+      const res = await fetch(apiUrl(`/guild/${guildId}`), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -109,7 +108,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 
   const fetchAutoResponders = async (guildId: string) => {
     try {
-      const res = await fetch(`${baseUrl}/guild/${guildId}/autoresponder`, {
+      const res = await fetch(apiUrl(`/guild/${guildId}/autoresponder`), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -124,7 +123,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 
   const fetchWelcomeSettings = async (guildId: string) => {
     try {
-      const res = await fetch(`${baseUrl}/guild/${guildId}/welcome`, {
+      const res = await fetch(apiUrl(`/guild/${guildId}/welcome`), {
         headers: {
           Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
@@ -147,7 +146,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
       return;
     setSaving(true);
     try {
-      await fetch(`${baseUrl}/guild/${selectedGuild.id}/autoresponder`, {
+      await fetch(apiUrl(`/guild/${selectedGuild.id}/autoresponder`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -169,7 +168,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
     if (!token || !selectedGuild) return;
     setSaving(true);
     try {
-      await fetch(`${baseUrl}/guild/${selectedGuild.id}/welcome`, {
+      await fetch(apiUrl(`/guild/${selectedGuild.id}/welcome`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -190,7 +189,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
     if (!token || !selectedGuild) return;
     setSaving(true);
     try {
-      await fetch(`${baseUrl}/guild/${selectedGuild.id}`, {
+      await fetch(apiUrl(`/guild/${selectedGuild.id}`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -211,7 +210,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
     if (!token) return;
     setSaving(true);
     try {
-      await fetch(`${baseUrl}/user/settings`, {
+      await fetch(apiUrl("/user/settings"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -371,7 +370,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
                   </h3>
                   {!user && (
                     <a
-                      href={`${baseUrl}/auth/discord/login`}
+                      href={`${apiUrl("/auth/discord/login")}`}
                       className="text-[10px] uppercase tracking-widest font-bold text-discord hover:text-white transition-colors"
                     >
                       {t("login")}
