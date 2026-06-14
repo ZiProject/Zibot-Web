@@ -229,6 +229,8 @@ export async function fetchBotInfo(): Promise<BotInfo> {
 
 export const proxyImage = (url?: string) => {
   if (!url) return "";
-
+  if (!isDiscordActivity()) {
+    return url;
+  }
   return `${apiUrl("/proxy/image")}?url=${encodeURIComponent(url)}`;
 };
