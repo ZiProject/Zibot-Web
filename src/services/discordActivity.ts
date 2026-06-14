@@ -230,5 +230,5 @@ export async function fetchBotInfo(): Promise<BotInfo> {
 export const proxyImage = (url?: string) => {
   if (!url) return "";
 
-  return `/proxy/image?url=${encodeURIComponent(url)}`;
+  return `${apiUrl("/proxy/image")}?url=${encodeURIComponent(url)}`;
 };
