@@ -19,6 +19,10 @@ import { Features } from "./components/Features";
 import { TermsView, PrivacyView } from "./components/LegalViews";
 import { LoginSuccess } from "./components/LoginSuccess";
 import { MusicPlayerView } from "./components/MusicPlayerView";
+import {
+  isDiscordActivity,
+  loginViaActivity,
+} from "./services/discordActivity";
 
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
 
@@ -33,6 +37,10 @@ function AppContent() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (isDiscordActivity()) loginViaActivity();
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -51,6 +59,18 @@ function AppContent() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (botInfo?.avatars) {
+      const link =
+        (document.querySelector("link[rel~='icon']") as HTMLLinkElement) ||
+        document.createElement("link");
+      link.type = "image/x-icon";
+      link.rel = "shortcut icon";
+      link.href = botInfo.avatars;
+      document.head.appendChild(link);
+    }
+  }, [botInfo]);
+  
   return (
     <div className="min-h-screen bg-vibrant-bg flex flex-col">
       <Navigation botInfo={botInfo} />

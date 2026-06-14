@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
+  apiUrl,
+  getWsUrl,
+  isDiscordActivity,
+} from "../services/discordActivity";
+import {
   Play,
   Pause,
   SkipForward,
@@ -114,10 +119,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const token = localStorage.getItem("ziji-token");
-  const baseUrl = import.meta.env.VITE_BotAPI || "";
-  const wsUrl =
-    baseUrl.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://") +
-    "/ws";
+  const baseUrl = apiUrl("/");
+  const wsUrl = getWsUrl();
 
   useEffect(() => {
     if (!token) {
