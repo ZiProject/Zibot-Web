@@ -1,5 +1,19 @@
 # Ziji Bot Dashboard 🚀
 
+<p align="center">
+  <a href="https://github.com/ZiProject/Zibot-Web">
+    <img src="https://img.shields.io/github/stars/ZiProject/Zibot-Web?style=for-the-badge" />
+  </a>
+
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/ZiProject/Zibot-Web">
+    <img src="https://img.shields.io/badge/Deploy-Vercel-black?style=for-the-badge&logo=vercel" />
+  </a>
+
+  <a href="https://discord.gg/wbhBExpMNj">
+    <img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
+  </a>
+</p>
+
 The official web management interface for **Ziji Bot** - A multi-purpose Discord bot featuring a modern design and smooth animations.
 
 ## 🌟 Key Features
@@ -31,30 +45,28 @@ Before you start, you need to create an application at the [Discord Developer Po
 4.  **Set Redirect URIs**: Add the following URLs in the **Redirects** section:
     - `http://localhost:3000/auth/discord/callback` (For local development)
     - `https://your-domain.com/auth/discord/callback` (For production)
+    - <img width="1387" height="303" alt="image" src="https://github.com/user-attachments/assets/658ed0cb-41d2-41a7-b7eb-319b14c17d11" />
+---
+for discord activities:
+<img width="1915" height="711" alt="image" src="https://github.com/user-attachments/assets/93dc417d-95d4-458e-bda0-8193be256162" />
+
 
 ### 2. Environment Variables Configuration
 
 Create a `.env` file in the root directory (based on `.env.example`):
 
-#### Frontend Configuration (.env)
+#### Frontend Configuration (.env) this project
 ```env
-VITE_DISCORD_CLIENT_ID="YOUR_APPLICATION_ID"
 VITE_BotAPI="http://localhost:3000" # Your backend API URL
 ```
 
-#### Backend Configuration (.env)
+#### Backend Configuration (.env) in [Ziji-discord-bot](https://github.com/ZiProject/Ziji-bot-discord)
 ```env
 DISCORD_CLIENT_SECRET="YOUR_CLIENT_SECRET"
 DASHBOARD_URL="http://localhost:3000" # URL where the dashboard is hosted
 API_URL="http://localhost:3000"       # URL where this API is hosted
 JWT_SECRET="your_random_secret_string" # Change this to a secure random string
 ```
-
-### 3. Backend Dependency Note
-
-The files in the `/api` directory might rely on specific libraries from the [Ziji ecosystem](https://github.com/ZiProject/Ziji-bot-discord). If you are setting up the backend manually, ensure these dependencies are referenced or mocked appropriately as seen in `server.ts`.
-
----
 
 ## 🚀 Getting Started
 
