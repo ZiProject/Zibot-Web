@@ -32,14 +32,11 @@ export const getWsUrl = (): string => {
 export async function getDiscordClientId() {
   if (_clientId) return _clientId;
 
-  const res = await fetch(
-    import.meta.env.VITE_BotAPI || "https://api.ziji.best",
-    {
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
+  const res = await fetch(apiUrl(""), {
+    headers: {
+      "ngrok-skip-browser-warning": "true",
     },
-  );
+  });
 
   if (!res.ok) {
     throw new Error("Cannot fetch Bot API");
@@ -78,7 +75,7 @@ export async function loginViaActivity(): Promise<string | null> {
     scope: ["identify", "guilds"],
   });
 
-  const res = await fetch("/api/auth/token", {
+  const res = await fetch(apiUrl("/auth/token"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

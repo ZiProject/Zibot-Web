@@ -136,6 +136,7 @@ export function Navigation({ botInfo }: HeroProps) {
           </div>
 
           <a
+            title="GitHub Repository"
             href="https://github.com/ZiProject/Ziji-bot-discord"
             target="_blank"
             rel="noopener noreferrer"
