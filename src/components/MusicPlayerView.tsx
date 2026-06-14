@@ -119,7 +119,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const token = localStorage.getItem("ziji-token");
-  const baseUrl = apiUrl("/");
+  const baseUrl = apiUrl("");
   const wsUrl = getWsUrl();
 
   useEffect(() => {

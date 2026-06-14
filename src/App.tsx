@@ -39,6 +39,12 @@ function AppContent() {
   }, [location.pathname]);
 
   useEffect(() => {
+    try {
+      //test activity login on app load, if in discord activity, it will login and set token
+      loginViaActivity();
+    } catch (err) {
+      console.error("Activity login error:", err);
+    }
     if (isDiscordActivity()) loginViaActivity();
   }, []);
 
@@ -70,7 +76,7 @@ function AppContent() {
       document.head.appendChild(link);
     }
   }, [botInfo]);
-  
+
   return (
     <div className="min-h-screen bg-vibrant-bg flex flex-col">
       <Navigation botInfo={botInfo} />

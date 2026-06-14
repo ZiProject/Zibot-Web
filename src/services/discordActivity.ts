@@ -9,7 +9,7 @@ export const isDiscordActivity = (): boolean =>
 
 export const getApiBase = (): string =>
   isDiscordActivity()
-    ? ""
+    ? "/api"
     : import.meta.env.VITE_BotAPI || "https://api.ziji.best";
 
 export const apiUrl = (path: string): string =>
