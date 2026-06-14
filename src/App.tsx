@@ -14,7 +14,6 @@ import {
 import { Navigation } from "./components/Navigation";
 import { Hero } from "./components/Hero";
 import { DashboardView } from "./components/DashboardView";
-import { BotInfo, fetchBotInfo } from "./services/api";
 import { Features } from "./components/Features";
 import { TermsView, PrivacyView } from "./components/LegalViews";
 import { LoginSuccess } from "./components/LoginSuccess";
@@ -22,6 +21,8 @@ import { MusicPlayerView } from "./components/MusicPlayerView";
 import {
   isDiscordActivity,
   loginViaActivity,
+  BotInfo,
+  fetchBotInfo,
 } from "./services/discordActivity";
 
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
@@ -39,12 +40,6 @@ function AppContent() {
   }, [location.pathname]);
 
   useEffect(() => {
-    try {
-      //test activity login on app load, if in discord activity, it will login and set token
-      loginViaActivity();
-    } catch (err) {
-      console.error("Activity login error:", err);
-    }
     if (isDiscordActivity()) loginViaActivity();
   }, []);
 

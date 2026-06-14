@@ -27,7 +27,7 @@ import {
   Baseline,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
-import { BotInfo } from "../services/api";
+import { BotInfo } from "../services/discordActivity";
 
 interface Track {
   title: string;

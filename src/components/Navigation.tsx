@@ -11,7 +11,7 @@ import {
 import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useLanguage, Language } from "../context/LanguageContext";
-import { BotInfo } from "../services/api";
+import { BotInfo } from "../services/discordActivity";
 interface HeroProps {
   botInfo: BotInfo | null;
 }

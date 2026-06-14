@@ -3,6 +3,24 @@ import type { DiscordSDK } from "@discord/embedded-app-sdk";
 let _sdk: DiscordSDK | null = null;
 let _clientId: string | null = null;
 
+export interface BotInfo {
+  status: string;
+  content: string;
+  clientName: string;
+  clientId: string;
+  avatars: string;
+  inviteUrl?: string;
+  playerNetClient?: [
+    {
+      clientId: string;
+      clientName: string;
+      avatars: string;
+      inviteUrl?: string;
+    },
+  ];
+  [key: string]: any;
+}
+
 export const isDiscordActivity = (): boolean => {
   const isEmbed = window.self !== window.top;
   const isDiscordOrigin = Boolean(
@@ -195,4 +213,16 @@ export async function loginViaActivity(): Promise<string | null> {
   );
 
   return token;
+}
+
+export async function fetchBotInfo(): Promise<BotInfo> {
+  const response = await fetch(apiUrl("/"), {
+    headers: {
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch bot info");
+  }
+  return response.json();
 }
