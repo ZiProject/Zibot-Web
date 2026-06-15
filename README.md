@@ -14,74 +14,97 @@
   </a>
 </p>
 
-The official web management interface for **Ziji Bot** - A multi-purpose Discord bot featuring a modern design and smooth animations.
+The official web management interface and **Discord Activity** for **Ziji Bot**. A modern, high-performance dashboard designed to give users and server administrators full control over their bot experience with a sleek Cyberpunk aesthetic.
 
-## 🌟 Key Features
+---
 
-- **Modern Interface**: Designed with a Cyberpunk/Modern UI aesthetic, supporting multiple languages (EN, VI, JA).
-- **Management Dashboard**: Configure your servers, view personal profile stats (Level, Currency, XP).
-- **Music Player**: An intuitive web-based music experience with search and lyrics support.
-- **Server Customization**: Configure Autoresponders, Welcome Messages, and Guild Settings.
-- **Security**: Authenticated via Discord OAuth2 and secured with JWT.
+## ✨ Key Features
+
+- **🎮 Dual Mode**: Works perfectly as a standalone web application and as an integrated **Discord Activity**.
+- **🌌 Cyberpunk Design**: A stunning, modern interface featuring smooth animations powered by Framer Motion.
+- **📊 Management Dashboard**: Real-time server configuration and personal stats tracking (Level, Currency, XP).
+- **🎵 Advanced Music Player**: Intuitive web-based music experience with search, playlist management, and lyrics support.
+- **🛠️ Server Customization**: Easily configure Autoresponders, Welcome Messages, and Guild settings without using bot commands.
+- **🌐 Multilingual Support**: Fully localized in **English**, **Vietnamese**, and **Japanese**.
+- **🔒 Secure Authentication**: Robust security using Discord OAuth2 and JWT-based session management.
+
+---
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: React 19, Vite, Tailwind CSS 4, Framer Motion (Motion).
-- **Backend (API)**: Express.js, JWT.
-- **Icons**: Lucide React.
-- **Fonts**: Inter & JetBrains Mono.
+| Category                | Technology                                    |
+| :---------------------- | :-------------------------------------------- |
+| **Frontend**            | React 19, Vite, Tailwind CSS 4, Framer Motion |
+| **Backend**             | Express.js, Node.js                           |
+| **Discord Integration** | @discord/embedded-app-sdk                     |
+| **UI Components**       | Shadcn UI, Lucide React                       |
+| **Authentication**      | Discord OAuth2, JSON Web Tokens (JWT)         |
 
 ---
-
-## ⚙️ Setup Instructions
-
-### 1. Discord Developer Portal Configuration
-
-Before you start, you need to create an application at the [Discord Developer Portal](https://discord.com/developers/applications).
-
-1.  **Create Application**: Click "New Application" and give your bot a name.
-2.  **Get Client ID**: Copy the **Application ID** (Use this for `VITE_DISCORD_CLIENT_ID`).
-3.  **Get Client Secret**: Go to **OAuth2** -> **General** -> **Reset Secret** to generate a secret (Use this for `DISCORD_CLIENT_SECRET`).
-4.  **Set Redirect URIs**: Add the following URLs in the **Redirects** section:
-    - `http://localhost:3000/auth/discord/callback` (For local development)
-    - `https://your-domain.com/auth/discord/callback` (For production)
-    - <img width="1387" height="303" alt="image" src="https://github.com/user-attachments/assets/658ed0cb-41d2-41a7-b7eb-319b14c17d11" />
----
-for discord activities:
-<img width="1915" height="711" alt="image" src="https://github.com/user-attachments/assets/93dc417d-95d4-458e-bda0-8193be256162" />
-
-
-### 2. Environment Variables Configuration
-
-Create a `.env` file in the root directory (based on `.env.example`):
-
-#### Frontend Configuration (.env) this project
-```env
-VITE_BotAPI="http://localhost:3000" # Your backend API URL
-```
-
-#### Backend Configuration (.env) in [Ziji-discord-bot](https://github.com/ZiProject/Ziji-bot-discord)
-```env
-DISCORD_CLIENT_SECRET="YOUR_CLIENT_SECRET"
-DASHBOARD_URL="http://localhost:3000" # URL where the dashboard is hosted
-API_URL="http://localhost:3000"       # URL where this API is hosted
-JWT_SECRET="your_random_secret_string" # Change this to a secure random string
-```
 
 ## 🚀 Getting Started
 
-### Install Dependencies
-```bash
-npm install
-```
+### 📋 Prerequisites
 
-### Run in Development Mode
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [NPM](https://www.npmjs.com/) or [Yarn](https://yarnpkg.com/)
+- A Discord Application created via the [Discord Developer Portal](https://discord.com/developers/applications).
+
+### ⚙️ Discord Configuration
+
+1.  **Create Application**: Create a new application in the Developer Portal.
+2.  **Client ID & Secret**: Copy your **Application ID** and **Client Secret**.
+3.  **OAuth2 Redirects**: Add the following URIs in the OAuth2 section:
+    - `http://localhost:3000/auth/discord/callback` (Local development)
+    - `https://your-domain.com/auth/discord/callback` (Production)
+4.  **Bot Scopes**: Ensure the bot has `identify`, `guilds`, and `email` scopes.
+5.  **Discord Activity URL Mapping**: If you are using this as an Activity, configure the **URL Mappings** in the "Embedded App SDK" section:
+    | Prefix | Target URL |
+    | :--- | :--- |
+    | `/` | `https://bot.ziji.best` |
+    | `/api` | `https://api.ziji.best` |
+    | `/api/ws` | `https://api.ziji.best/ws` |
+    - bot.ziji.best: url this web
+    - api.ziji.best: url Ziji-discord-bot - connect via clouflared/ngrok/... support at .env
+
+---
+
+### 🔧 Installation & Setup
+
+1.  **Clone the repository:**
+
+    ```bash
+    git clone https://github.com/ZiProject/Zibot-Web.git
+    cd Zibot-Web
+    ```
+
+2.  **Install dependencies:**
+
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Variables:**
+    Create a `.env` file in the root directory and configure your backend API:
+    ```env
+    VITE_BotAPI="http://localhost:2003" # Your Ziji-discord-bot API URL
+    ```
+    _Note: For the backend repository ([Ziji-discord-bot](https://github.com/ZiProject/Ziji-bot-discord)), ensure you set up `DISCORD_CLIENT_SECRET`, `JWT_SECRET`, and `DASHBOARD_URL`._
+
+---
+
+### 🏃 Running Locally
+
+**Start development server:**
+
 ```bash
 npm run dev
 ```
-The app will be available at: `http://localhost:3000`
 
-### Build for Production
+The application will be available at `http://localhost:3000`.
+
+**Build for production:**
+
 ```bash
 npm run build
 npm start
@@ -91,17 +114,29 @@ npm start
 
 ## 📂 Project Structure
 
-- `/src`: Frontend source code (React).
-- `/api`: Express API routes (Backend logic).
-- `/public`: Static assets.
-- `server.ts`: Unified entry point for both Web and API Server.
-
-## 🔗 Links
-
-- **Website**: [bot.ziji.best](https://bot.ziji.best)
-- **API**: [api.ziji.best](https://api.ziji.best)
-- **GitHub API**: [Ziji-bot-discord](https://github.com/ZiProject/Ziji-bot-discord)
-- **GitHub Web**: [Zibot-Web](https://github.com/zijipia/Zibot-Web)
+```text
+├── api/            # Backend API routes and logic
+├── src/            # Frontend React application
+│   ├── components/ # Reusable UI components
+│   ├── context/    # State management and localization
+│   ├── services/   # API and Discord Activity integrations
+│   └── main.tsx    # Application entry point
+├── server.ts       # Unified Express/Vite server entry
+└── public/         # Static assets
+```
 
 ---
-© 2024 **ZiProject** - Developed by the Discord community.
+
+## 🔗 Useful Links
+
+- **Main Website**: [bot.ziji.best](https://bot.ziji.best)
+- **Discord Bot Repo**: [Ziji-bot-discord](https://github.com/ZiProject/Ziji-bot-discord)
+- **Community**: [Join our Discord](https://discord.gg/wbhBExpMNj)
+
+---
+
+<p align="center">
+  Developed with ❤️ by <b>ZiProject</b>
+  <br>
+  <i>Empowering Discord communities with modern tools.</i>
+</p>
