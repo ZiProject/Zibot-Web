@@ -1,17 +1,14 @@
 import { motion, AnimatePresence } from "motion/react";
-import {
-  Bot,
-  LayoutDashboard,
-  Github,
-  Menu,
-  X,
-  Languages,
-  User,
-} from "lucide-react";
+import { Bot, Github, Menu, X, Languages } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useLanguage, Language } from "../context/LanguageContext";
-import { BotInfo, apiUrl } from "../services/discordActivity";
+import {
+  isDiscordActivity,
+  loginViaActivity,
+  BotInfo,
+  apiUrl,
+} from "../services/discordActivity";
 interface HeroProps {
   botInfo: BotInfo | null;
 }
@@ -23,28 +20,55 @@ export function Navigation({ botInfo }: HeroProps) {
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const loadUser = () => {
     const token = localStorage.getItem("ziji-token");
-    if (token) {
-      fetch(apiUrl("/user/me"), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "ngrok-skip-browser-warning": "true",
-        },
-      })
-        .then((res) => res.json())
-        .then((data) => setUser(data))
-        .catch(() => {
-          console.error("Navigation: Failed to fetch user info");
-          // localStorage.removeItem('ziji-token');
-        });
+    if (!token) {
+      setUser(null);
+      return;
     }
+
+    fetch(apiUrl("/user/me"), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "ngrok-skip-browser-warning": "true",
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to fetch user info (${res.status})`);
+        }
+        return res.json();
+      })
+      .then((data) => setUser(data))
+      .catch(() => {
+        console.error("Navigation: Failed to fetch user info");
+        localStorage.removeItem("ziji-token");
+        setUser(null);
+      });
+  };
+
+  useEffect(() => {
+    loadUser();
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("ziji-token");
     setUser(null);
     navigate("/");
+  };
+
+  const handleLogin = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!isDiscordActivity()) {
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      await loginViaActivity();
+      loadUser();
+    } catch (error) {
+      console.error("Navigation: Failed to log in via Discord Activity", error);
+    }
   };
 
   const activeStyles = "text-white border-b-2 border-discord pb-1";
@@ -166,6 +190,7 @@ export function Navigation({ botInfo }: HeroProps) {
           ) : (
             <a
               href={`${import.meta.env.VITE_BotAPI || ""}/auth/discord/login`}
+              onClick={handleLogin}
               className="flex items-center gap-2 px-6 py-2 bg-discord hover:brightness-110 text-white rounded-full text-sm font-bold transition-all hover:glow"
             >
               <Bot className="w-4 h-4" />
