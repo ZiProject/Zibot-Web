@@ -14,7 +14,8 @@
   </a>
 </p>
 
-The official web management interface and **Discord Activity** for **Ziji Bot**. A modern, high-performance dashboard designed to give users and server administrators full control over their bot experience with a sleek Cyberpunk aesthetic.
+The official web management interface and **Discord Activity** for **Ziji Bot**. A modern, high-performance dashboard designed to
+give users and server administrators full control over their bot experience with a sleek Cyberpunk aesthetic.
 
 ---
 
@@ -58,12 +59,9 @@ The official web management interface and **Discord Activity** for **Ziji Bot**.
     - `http://localhost:3000/auth/discord/callback` (Local development)
     - `https://your-domain.com/auth/discord/callback` (Production)
 4.  **Bot Scopes**: Ensure the bot has `identify`, `guilds`, and `email` scopes.
-5.  **Discord Activity URL Mapping**: If you are using this as an Activity, configure the **URL Mappings** in the "Embedded App SDK" section:
-    | Prefix | Target URL |
-    | :--- | :--- |
-    | `/` | `https://bot.ziji.best` |
-    | `/api` | `https://api.ziji.best` |
-    | `/api/ws` | `https://api.ziji.best/ws` |
+5.  **Discord Activity URL Mapping**: If you are using this as an Activity, configure the **URL Mappings** in the "Embedded App
+    SDK" section: | Prefix | Target URL | | :--- | :--- | | `/` | `https://bot.ziji.best` | | `/api` | `https://api.ziji.best` | |
+    `/api/ws` | `https://api.ziji.best/ws` |
     - bot.ziji.best: url this web
     - api.ziji.best: url Ziji-discord-bot - connect via clouflared/ngrok/... support at .env
 
@@ -84,12 +82,12 @@ The official web management interface and **Discord Activity** for **Ziji Bot**.
     npm install
     ```
 
-3.  **Environment Variables:**
-    Create a `.env` file in the root directory and configure your backend API:
+3.  **Environment Variables:** Create a `.env` file in the root directory and configure your backend API:
     ```env
     VITE_BotAPI="http://localhost:2003" # Your Ziji-discord-bot API URL
     ```
-    _Note: For the backend repository ([Ziji-discord-bot](https://github.com/ZiProject/Ziji-bot-discord)), ensure you set up `DISCORD_CLIENT_SECRET`, `JWT_SECRET`, and `DASHBOARD_URL`._
+    _Note: For the backend repository ([Ziji-discord-bot](https://github.com/ZiProject/Ziji-bot-discord)), ensure you set up
+    `DISCORD_CLIENT_SECRET`, `JWT_SECRET`, and `DASHBOARD_URL`._
 
 ---
 

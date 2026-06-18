@@ -1,6 +1,6 @@
 {
-  "name": "Ziji Bot Dashboard",
-  "description": "An impressive introduction and dashboard for Ziji, the multi-purpose Discord bot.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+	"name": "Ziji Bot Dashboard",
+	"description": "An impressive introduction and dashboard for Ziji, the multi-purpose Discord bot.",
+	"requestFramePermissions": [],
+	"majorCapabilities": []
 }

@@ -13,14 +13,17 @@ module.exports.data = {
 	enable: true,
 	priority: 9,
 };
-
+/**
+ *
+ * @param { import ("discord.js").Client} client
+ * @returns
+ */
 module.exports.execute = (client) => {
 	const server = useHooks.get("server");
-	console.log(client);
 
 	router.get("/auth/discord/login", async (req, res) => {
 		try {
-			const url = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify%20guilds%20email`;
+			const url = `https://discord.com/api/oauth2/authorize?client_id=${client.user?.id}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify%20guilds%20email`;
 			res.redirect(url);
 		} catch (error) {
 			console.error("[Bot API] Error fetching user guilds:", error);
@@ -28,6 +31,49 @@ module.exports.execute = (client) => {
 				success: false,
 				error: error.message,
 			});
+		}
+	});
+
+	router.post("/auth/token", async (req, res) => {
+		try {
+			const { code } = req.body;
+			if (!code) return res.status(400).json({ error: "Missing authorization code" });
+			const tokenRes = await axios.post(
+				"https://discord.com/api/oauth2/token",
+				new URLSearchParams({
+					client_id: client.user?.id,
+					client_secret: process.env.DISCORD_CLIENT_SECRET,
+					grant_type: "authorization_code",
+					code,
+				}),
+				{ headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+			);
+
+			const { access_token } = tokenRes.data;
+
+			const userRes = await axios.get("https://discord.com/api/users/@me", {
+				headers: { Authorization: `Bearer ${access_token}` },
+			});
+			const u = userRes.data;
+			const db = useHooks.get("db");
+			await db.ZiUser.findOneAndUpdate(
+				{ userID: u.id },
+				{
+					$set: { username: u.username, avatar: u.avatar, lastLogin: new Date() },
+					$inc: { loginCount: 1 },
+					$setOnInsert: { userID: u.id, createdAt: new Date() },
+				},
+				{ upsert: true },
+			);
+
+			// JWT cùng cấu trúc với web dashboard — dùng chung được toàn bộ API
+			const token = jwt.sign({ id: u.id, username: u.username, avatar: u.avatar }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+			res.json({ token, user: { id: u.id, username: u.username, avatar: u.avatar } });
+		} catch (err) {
+			const status = err.response?.status || 500;
+			useHooks.get("logger")?.error(`[API] /auth/token ${err.stack || err}`);
+			res.status(status).json({ error: err.response?.data ?? err.message });
 		}
 	});
 
@@ -39,7 +85,7 @@ module.exports.execute = (client) => {
 			const tokenResponse = await axios.post(
 				"https://discord.com/api/oauth2/token",
 				new URLSearchParams({
-					client_id: client.user.id,
+					client_id: client.user?.id,
 					client_secret: process.env.DISCORD_CLIENT_SECRET,
 					grant_type: "authorization_code",
 					code: code.toString(),
@@ -56,8 +102,33 @@ module.exports.execute = (client) => {
 
 			const userData = userResponse.data;
 
-			// In a real app, you'd find/create the user in MongoDB here
-			// const user = await ZiUser.findOneAndUpdate({ userID: userData.id }, { ... }, { upsert: true });
+			//put guids to db
+			const guild = await axios.get("https://discord.com/api/users/@me/guilds", {
+				headers: { Authorization: `Bearer ${access_token}` },
+			});
+
+			const guildss = guild.data;
+
+			const db = useHooks.get("db");
+			await db.ZiUser.findOneAndUpdate(
+				{ userID: userData.id },
+				{
+					userID: userData.id,
+					username: userData.username,
+					avatar: userData.avatar,
+					guilds: guildss.map((g) => ({
+						id: g.id,
+						name: g.name,
+						permissions: g.permissions,
+						permissionsNew: g.permissions_new,
+						owner: g.owner,
+					})),
+					lastLogin: new Date(),
+					$inc: { loginCount: 1 },
+					$setOnInsert: { createdAt: new Date() },
+				},
+				{ upsert: true },
+			);
 
 			const token = jwt.sign(
 				{ id: userData.id, username: userData.username, avatar: userData.avatar }, //aaaaa
