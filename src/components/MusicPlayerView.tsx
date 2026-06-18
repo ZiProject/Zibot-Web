@@ -5,6 +5,7 @@ import {
   getWsUrl,
   isDiscordActivity,
   proxyImage,
+  useIsMinimized,
 } from "../services/discordActivity";
 import {
   Play,
@@ -59,6 +60,7 @@ interface HeroProps {
 export function MusicPlayerView({ botInfo }: HeroProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState<PlayerStats | null>(null);
+  const isMinimized = useIsMinimized();
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -348,6 +350,95 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
+
+  if (isMinimized) {
+    if (error) {
+      return (
+        <div className="fixed inset-0 bg-[#050505] flex flex-col items-center justify-center p-4 text-center select-none">
+          <p className="text-vibrant-pink font-bold text-xs">{error}</p>
+        </div>
+      );
+    }
+
+    if (!connected) {
+      return (
+        <div className="fixed inset-0 bg-[#050505] flex items-center justify-center select-none">
+          <div className="w-8 h-8 border-2 border-white/10 border-t-discord rounded-full animate-spin"></div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="fixed inset-0 bg-[#050505] flex flex-col overflow-hidden select-none">
+        {/* Thumbnail Container */}
+        <div className="relative flex-grow w-full overflow-hidden bg-black flex items-center justify-center">
+          {stats?.track?.thumbnail ? (
+            <>
+              {/* Blurred Background for aesthetic glow */}
+              <img
+                src={proxyImage(stats.track.thumbnail)}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110"
+              />
+              {/* Sharp Image */}
+              <img
+                src={proxyImage(stats.track.thumbnail)}
+                alt={stats.track.title}
+                className="relative max-w-full max-h-full object-contain z-10 shadow-2xl rounded-lg p-2"
+              />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-zinc-600 gap-2">
+              <Music className="w-10 h-10 animate-pulse" />
+              <span className="text-xs font-bold tracking-widest uppercase">No Track</span>
+            </div>
+          )}
+        </div>
+
+        {/* Controls Bar at bottom */}
+        <div className="h-14 bg-black/60 backdrop-blur-md border-t border-white/5 flex items-center justify-between px-3 shrink-0 gap-3">
+          {/* Title and artist */}
+          <div className="flex-grow min-w-0">
+            <div className="font-bold text-xs truncate text-white">
+              {stats?.track?.title || "Ziji Music Engine"}
+            </div>
+            <div className="text-[9px] font-bold text-zinc-500 uppercase truncate">
+              {stats?.track?.author || "Standby"}
+            </div>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => sendCommand("back")}
+              className="p-2 text-zinc-400 hover:text-white transition-colors"
+              title="Previous"
+            >
+              <SkipBack className="w-4 h-4 fill-current" />
+            </button>
+            <button
+              onClick={() => sendCommand("pause")}
+              className="p-2 bg-discord hover:brightness-110 rounded-xl text-white flex items-center justify-center transition-all"
+              title="Play/Pause"
+            >
+              {stats?.paused ? (
+                <Play className="w-4 h-4 fill-current" />
+              ) : (
+                <Pause className="w-4 h-4 fill-current" />
+              )}
+            </button>
+            <button
+              onClick={() => sendCommand("skip")}
+              className="p-2 text-zinc-400 hover:text-white transition-colors"
+              title="Next"
+            >
+              <SkipForward className="w-4 h-4 fill-current" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

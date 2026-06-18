@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { DiscordSDK } from "@discord/embedded-app-sdk";
 
 let _sdk: DiscordSDK | null = null;
@@ -234,3 +235,75 @@ export const proxyImage = (url?: string) => {
   }
   return `${apiUrl("/proxy/image")}?url=${encodeURIComponent(url)}`;
 };
+
+export const getDiscordSdk = (): DiscordSDK | null => _sdk;
+
+export function useIsMinimized() {
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  useEffect(() => {
+    const checkDimensions = () => {
+      return window.innerWidth < 480 || window.innerHeight < 350;
+    };
+
+    const handleResize = () => {
+      setIsMinimized(checkDimensions());
+    };
+
+    setIsMinimized(checkDimensions());
+    window.addEventListener("resize", handleResize);
+
+    let active = true;
+    let subscribed = false;
+    let sdkInstance: any = null;
+
+    const handleLayoutUpdate = (eventData: any) => {
+      if (!active) return;
+      console.log("[useIsMinimized] Discord layout update event:", eventData);
+      if (eventData && (eventData.layout_mode === 1 || eventData.layout_mode === "PIP")) {
+        setIsMinimized(true);
+      } else {
+        setIsMinimized(checkDimensions());
+      }
+    };
+
+    const setupDiscordListener = async () => {
+      for (let i = 0; i < 20; i++) {
+        if (!active) return;
+        if (_sdk) {
+          sdkInstance = _sdk;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      if (sdkInstance && active) {
+        try {
+          console.log("[useIsMinimized] Subscribing to ACTIVITY_LAYOUT_MODE_UPDATE");
+          await sdkInstance.subscribe("ACTIVITY_LAYOUT_MODE_UPDATE", handleLayoutUpdate);
+          subscribed = true;
+        } catch (err) {
+          console.warn("[useIsMinimized] Failed to subscribe to layout updates:", err);
+        }
+      }
+    };
+
+    if (isDiscordActivity()) {
+      setupDiscordListener();
+    }
+
+    return () => {
+      active = false;
+      window.removeEventListener("resize", handleResize);
+      if (subscribed && sdkInstance) {
+        try {
+          sdkInstance.unsubscribe("ACTIVITY_LAYOUT_MODE_UPDATE", handleLayoutUpdate);
+        } catch (err) {
+          console.warn("[useIsMinimized] Failed to unsubscribe from layout updates:", err);
+        }
+      }
+    };
+  }, []);
+
+  return isMinimized;
+}

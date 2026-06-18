@@ -23,6 +23,7 @@ import {
   loginViaActivity,
   BotInfo,
   fetchBotInfo,
+  useIsMinimized,
 } from "./services/discordActivity";
 
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
@@ -33,6 +34,7 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
   const { t } = useLanguage();
+  const isMinimized = useIsMinimized();
 
   // Scroll to top on route change
   useEffect(() => {
@@ -74,7 +76,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-vibrant-bg flex flex-col">
-      <Navigation botInfo={botInfo} />
+      {!isMinimized && <Navigation botInfo={botInfo} />}
 
       <main className="flex-grow">
         <Routes>
@@ -107,30 +109,32 @@ function AppContent() {
         </Routes>
       </main>
 
-      <footer className="mt-20 py-10 border-t border-white/5 px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-[10px] uppercase font-bold tracking-[0.2em] text-zinc-600">
-          <div className="flex gap-10">
-            <span>© 2024 ZiProject</span>
-            <span>API: api.ziji.best</span>
+      {!isMinimized && (
+        <footer className="mt-20 py-10 border-t border-white/5 px-6">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-[10px] uppercase font-bold tracking-[0.2em] text-zinc-600">
+            <div className="flex gap-10">
+              <span>© 2024 ZiProject</span>
+              <span>API: api.ziji.best</span>
+            </div>
+            <div className="flex gap-8">
+              <Link to="/terms" className="hover:text-white transition-colors">
+                {t("terms")}
+              </Link>
+              <Link to="/privacy" className="hover:text-white transition-colors">
+                {t("privacy")}
+              </Link>
+              <a
+                href="https://github.com/ZiProject/Ziji-bot-discord"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
-          <div className="flex gap-8">
-            <Link to="/terms" className="hover:text-white transition-colors">
-              {t("terms")}
-            </Link>
-            <Link to="/privacy" className="hover:text-white transition-colors">
-              {t("privacy")}
-            </Link>
-            <a
-              href="https://github.com/ZiProject/Ziji-bot-discord"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }
