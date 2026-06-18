@@ -63,6 +63,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
 	const reconnectDelay = useRef(1000);
 
+	const [isVoiceConnected, setIsVoiceConnected] = useState(false);
+	const [voiceChannel, setVoiceChannel] = useState<{ channelName: string; guildName: string } | null>(null);
+	const [isJoining, setIsJoining] = useState(false);
+	const [joinError, setJoinError] = useState<string | null>(null);
+
 	// Thêm hằng số này bên ngoài Component hoặc trong component
 	const SILENT_SOUND_URL =
 		"data:audio/wav;base64,UklGRqAWAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YV4WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
@@ -122,6 +127,36 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const baseUrl = apiUrl("");
 	const wsUrl = getWsUrl();
 
+	const handleJoinVoice = async () => {
+		if (!token) return;
+		setIsJoining(true);
+		setJoinError(null);
+		try {
+			const res = await fetch(`${baseUrl}/music/join`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
+					"ngrok-skip-browser-warning": "true",
+				},
+			});
+
+			const data = await res.json();
+			if (!res.ok) {
+				throw new Error(data.error || "Failed to join voice channel");
+			}
+
+			if (ws && connected && authenticated) {
+				ws.send(JSON.stringify({ event: "GetVoice" }));
+			}
+		} catch (err: any) {
+			console.error("Join voice error:", err);
+			setJoinError(err.message || "Could not connect to voice channel");
+		} finally {
+			setIsJoining(false);
+		}
+	};
+
 	useEffect(() => {
 		if (!token) {
 			setError("Please login to access the music player.");
@@ -157,13 +192,29 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						socket.send(JSON.stringify({ event: "GetVoice" }));
 						break;
 
+					case "ReplyVoice":
+						setVoiceChannel({
+							channelName: data.channel?.name || "Unknown Channel",
+							guildName: data.guild?.name || "Unknown Guild",
+						});
+						setIsVoiceConnected(true);
+						setError(null);
+						break;
+
 					case "statistics":
 						setStats(data);
 						setVolume(data.volume);
+						setIsVoiceConnected(true);
 						break;
 
 					case "error":
-						setError(data.message);
+						if (data.message === "No active voice connection found for user") {
+							setIsVoiceConnected(false);
+							setVoiceChannel(null);
+							setError(null);
+						} else {
+							setError(data.message);
+						}
 						break;
 				}
 			};
@@ -355,6 +406,22 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			);
 		}
 
+		if (!isVoiceConnected) {
+			return (
+				<div className='fixed inset-0 bg-[#050505] flex flex-col items-center justify-center p-4 text-center select-none'>
+					<Music className='w-8 h-8 text-zinc-500 mb-2 animate-pulse' />
+					<p className='text-zinc-400 font-bold text-xs mb-3'>Not Connected to Voice</p>
+					<button
+						onClick={handleJoinVoice}
+						disabled={isJoining}
+						className='px-4 py-2 bg-discord hover:brightness-110 disabled:opacity-50 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all'>
+						{isJoining ? "Connecting..." : "Connect Voice"}
+					</button>
+					{joinError && <p className='text-vibrant-pink font-bold text-[9px] mt-2 truncate w-full px-2'>{joinError}</p>}
+				</div>
+			);
+		}
+
 		return (
 			<div className='fixed inset-0 bg-[#050505] flex flex-col overflow-hidden select-none'>
 				{/* Thumbnail Container */}
@@ -440,8 +507,53 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		);
 	}
 
+	if (!isVoiceConnected) {
+		return (
+			<div className='fixed inset-0 top-16 bg-[#09090b] flex items-center justify-center p-6 overflow-hidden select-none'>
+				{/* Animated Background Ambient Glows */}
+				<div className='absolute top-1/4 left-1/4 w-96 h-96 bg-discord/10 rounded-full blur-[100px] animate-pulse duration-5000'></div>
+				<div className='absolute bottom-1/4 right-1/4 w-96 h-96 bg-vibrant-pink/10 rounded-full blur-[100px] animate-pulse duration-7000'></div>
+
+				<div className='relative glass max-w-md w-full rounded-[2.5rem] p-10 text-center border border-white/5 shadow-2xl z-10 flex flex-col items-center gap-6'>
+					<div className='w-20 h-20 bg-discord/10 rounded-3xl flex items-center justify-center border border-discord/20 relative group overflow-hidden shadow-glow'>
+						<div className='absolute inset-0 bg-gradient-to-br from-discord/20 to-vibrant-pink/20 opacity-0 group-hover:opacity-100 transition-opacity'></div>
+						<Music className='w-10 h-10 text-discord' />
+					</div>
+
+					<div className='space-y-2'>
+						<h2 className='text-2xl font-black tracking-tight'>Not Connected to Voice</h2>
+						<p className='text-sm text-zinc-400 font-medium'>
+							Join a Discord voice channel first, then click below to connect Ziji Bot to your channel.
+						</p>
+					</div>
+
+					<button
+						onClick={handleJoinVoice}
+						disabled={isJoining}
+						className='w-full py-4 bg-discord hover:brightness-110 disabled:opacity-50 text-white rounded-2xl font-bold text-sm transition-all shadow-glow hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 cursor-pointer'>
+						{isJoining ?
+							<>
+								<div className='w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin'></div>
+								<span>Connecting Bot...</span>
+							</>
+						:	<span>Connect Bot to Voice</span>}
+					</button>
+
+					{joinError && (
+						<div className='text-xs font-bold text-vibrant-pink bg-vibrant-pink/5 border border-vibrant-pink/10 px-4 py-3 rounded-xl w-full'>
+							{joinError}
+						</div>
+					)}
+				</div>
+			</div>
+		);
+	}
+
 	return (
-		<div className='fixed inset-0 top-16 bg-[#09090b] flex overflow-hidden'>
+		<div className='fixed inset-0 top-16 bg-[#09090b] flex overflow-hidden select-none'>
+			{/* Background Animated Ambient Blobs */}
+			<div className='absolute top-10 left-1/3 w-80 h-80 bg-discord/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-5000'></div>
+			<div className='absolute bottom-10 right-1/4 w-80 h-80 bg-vibrant-pink/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-7000'></div>
 			{/* Sidebar - Desktop Only */}
 			<div className='w-64 border-r border-white/5 flex flex-col p-6 gap-8 hidden lg:flex shrink-0'>
 				<div className='flex items-center gap-3'>
@@ -696,27 +808,41 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			{/* Now Playing Panel */}
 			<div
-				className={`shrink-0 border-l border-white/5 flex flex-col transition-all duration-500 ease-out z-50
-          ${isPlayerOpen ? "fixed inset-0 bg-[#09090b]" : "hidden md:flex md:relative md:w-80 lg:w-[450px]"}
-          bg-gradient-to-b from-white/[0.02] to-transparent`}>
-				<div className='p-6 md:p-8 flex flex-col h-full gap-6 md:gap-8 overflow-y-auto'>
-					<div className='flex items-center justify-between'>
+				className={`shrink-0 border-l border-white/5 flex flex-col transition-all duration-500 ease-out z-50 overflow-hidden
+  					  ${isPlayerOpen ? "fixed inset-0 h-dvh bg-[#09090b]" : "hidden md:flex md:relative md:w-[clamp(320px,28vw,450px)]"} bg-gradient-to-b from-white/[0.02] to-transparent`}>
+				<div className='p-6 md:p-8 flex flex-col h-full min-h-0 gap-6 md:gap-8 overflow-y-auto'>
+					<div className='flex items-start justify-between shrink-0'>
 						<button
 							onClick={() => (isPlayerOpen ? setIsPlayerOpen(false) : setShowLyrics(!showLyrics))}
-							className={`p-3 rounded-xl transition-all ${showLyrics && !isPlayerOpen ? "bg-discord text-white" : "bg-white/5 text-zinc-500 hover:text-white"}`}>
+							className={`p-3 rounded-xl transition-all ${
+								showLyrics && !isPlayerOpen ? "bg-discord text-white" : "bg-white/5 text-zinc-500 hover:text-white"
+							}`}>
 							{isPlayerOpen ?
 								<SkipBack className='w-5 h-5 -rotate-90' />
 							:	<SlidersHorizontal className='w-5 h-5' />}
 						</button>
-						<p className='text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400'>Now Playing</p>
+
+						{/* Center */}
+						<div className='flex flex-col items-center flex-1 px-4'>
+							<p className='text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400'>Now Playing</p>
+
+							{voiceChannel && (
+								<div className='mt-1 flex items-center gap-1 text-[11px] font-semibold text-green-400'>
+									<span className='w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0' />
+									<span className='truncate max-w-[220px]'>{voiceChannel.channelName}</span>
+								</div>
+							)}
+						</div>
+
 						<button
 							title='showLyrics'
 							onClick={() => setShowLyrics(!showLyrics)}
-							className={`p-3 bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-all md:block ${isPlayerOpen ? "block" : "hidden"}`}>
+							className={`p-3 bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-all md:block ${
+								isPlayerOpen ? "block" : "hidden"
+							}`}>
 							<LayoutGrid className='w-5 h-5' />
 						</button>
 					</div>
-
 					<AnimatePresence mode='wait'>
 						{showLyrics ?
 							<motion.div
@@ -736,8 +862,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								animate={{ opacity: 1, scale: 1 }}
 								exit={{ opacity: 0, scale: 0.95 }}
 								className='flex-grow flex flex-col gap-8 justify-center'>
-								<div className='relative group perspective-1000'>
-									<div className='absolute inset-0 bg-discord/20 blur-[80px] rounded-full opacity-50 group-hover:opacity-100 transition-opacity'></div>
+								<div className='   relative  flex-1   min-h-0  flex items-center justify-center  '>
 									<img
 										src={proxyImage(
 											stats?.track?.thumbnail ||
@@ -745,11 +870,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 												"https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop",
 										)}
 										alt='Album Art'
-										className='relative w-full aspect-square rounded-[2rem] md:rounded-[3rem] shadow-2xl border border-white/10 z-10 transform-gpu transition-all duration-700 group-hover:rotate-y-12'
+										className='w-full h-full object-cover rounded-[clamp(1rem,3vw,2.5rem)] border border-white/10 shadow-2xl'
 									/>
 								</div>
 
-								<div className='space-y-1 md:space-y-2 text-center px-4'>
+								<div className='space-y-1 md:space-y-2 text-center px-2'>
 									<div className='overflow-hidden whitespace-nowrap'>
 										<motion.h2
 											className='font-black text-2xl md:text-3xl tracking-tighter inline-block'
@@ -770,7 +895,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						}
 					</AnimatePresence>
 
-					<div className='space-y-6 pt-4'>
+					<div className='shrink-0 space-y-4 pt-2'>
 						<div className='space-y-3'>
 							<div className='relative h-1 w-full bg-white/5 rounded-full cursor-pointer group'>
 								<div
@@ -798,36 +923,30 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							</div>
 						</div>
 
-						<div className='flex items-center justify-center gap-4'>
-							<button
-								onClick={() => sendCommand("Loop")}
-								className={`p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors ${stats?.repeatMode !== "off" ? "text-discord" : "text-zinc-600"}`}
-								title='Loop Mode'>
-								<Repeat className='w-5 h-5' />
-							</button>
-							<button
-								onClick={() => sendCommand("AutoPlay")}
-								className={`p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors ${stats?.autoPlay ? "text-green-500" : "text-zinc-600"}`}
-								title='AutoPlay'>
-								<Baseline className='w-5 h-5' />
-							</button>
-							<button
-								onClick={() => sendCommand("Lock")}
-								className={`p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors ${stats?.lockStatus ? "text-vibrant-pink" : "text-zinc-600"}`}
-								title='Lock Player'>
-								<LockKeyhole className='w-5 h-5' />
-							</button>
-
-							<div className='flex items-center gap-4 mx-2'>
+						<div className='flex items-center justify-center gap-3 md:gap-4 flex-wrap'>
+							{/* Primary Controls Row */}
+							<div className='flex items-center justify-center gap-4 md:gap-6 my-1'>
+								<button
+									onClick={() => sendCommand("Loop")}
+									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.repeatMode !== "off" ? "text-discord" : "text-zinc-600"}`}
+									title='Loop Mode'>
+									<Repeat className='w-4.5 h-4.5' />
+								</button>
+								<button
+									onClick={() => sendCommand("AutoPlay")}
+									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.autoPlay ? "text-green-500" : "text-zinc-600"}`}
+									title='AutoPlay'>
+									<Baseline className='w-4.5 h-4.5' />
+								</button>{" "}
 								<button
 									title='back'
 									onClick={() => sendCommand("back")}
-									className='text-zinc-500 hover:text-white transition-colors'>
+									className='text-zinc-500 hover:text-white transition-colors cursor-pointer'>
 									<SkipBack className='w-6 h-6 fill-current' />
 								</button>
 								<button
 									onClick={() => sendCommand("pause")}
-									className='w-16 h-16 bg-discord hover:brightness-110 rounded-3xl flex items-center justify-center shadow-glow text-white transition-transform active:scale-95'>
+									className='w-16 h-16 bg-discord hover:brightness-110 rounded-3xl flex items-center justify-center shadow-glow text-white transition-transform active:scale-95 cursor-pointer'>
 									{stats?.paused ?
 										<Play className='w-6 h-6 fill-current translate-x-0.5' />
 									:	<Pause className='w-6 h-6 fill-current' />}
@@ -835,17 +954,22 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								<button
 									title='skip'
 									onClick={() => sendCommand("skip")}
-									className='text-zinc-500 hover:text-white transition-colors'>
+									className='text-zinc-500 hover:text-white transition-colors cursor-pointer'>
 									<SkipForward className='w-6 h-6 fill-current' />
 								</button>
+								<button
+									onClick={() => sendCommand("Lock")}
+									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.lockStatus ? "text-vibrant-pink" : "text-zinc-600"}`}
+									title='Lock Player'>
+									<LockKeyhole className='w-4.5 h-4.5' />
+								</button>
+								<button
+									onClick={() => sendCommand("Shuffle")}
+									className='p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors text-zinc-600 hover:text-white cursor-pointer'
+									title='Shuffle'>
+									<Shuffle className='w-4.5 h-4.5' />
+								</button>
 							</div>
-
-							<button
-								onClick={() => sendCommand("Shuffle")}
-								className='p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors text-zinc-600 hover:text-white'
-								title='Shuffle'>
-								<Shuffle className='w-5 h-5' />
-							</button>
 						</div>
 
 						<div className='flex items-center gap-4 px-4 bg-white/[0.03] p-4 rounded-2xl border border-white/5'>

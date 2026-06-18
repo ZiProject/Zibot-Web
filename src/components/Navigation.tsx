@@ -76,8 +76,8 @@ export function Navigation({ botInfo }: HeroProps) {
 	];
 
 	return (
-		<nav className='fixed top-0 left-0 right-0 z-50 px-6 py-4'>
-			<div className='max-w-7xl mx-auto flex items-center justify-between glass rounded-2xl px-6 py-3'>
+		<nav className='fixed top-0 left-0 right-0 z-50 py-4 glass border-b border-white/5'>
+			<div className='max-w-7xl mx-auto flex items-center justify-between px-6'>
 				<Link
 					to='/'
 					className='flex items-center gap-3 cursor-pointer group'>
@@ -91,7 +91,7 @@ export function Navigation({ botInfo }: HeroProps) {
 				</Link>
 
 				{/* Desktop Nav */}
-				<div className='hidden md:flex items-center gap-8'>
+				<div className='hidden lg:flex items-center gap-8'>
 					<NavLink
 						to='/'
 						className={({ isActive }) =>
@@ -187,7 +187,7 @@ export function Navigation({ botInfo }: HeroProps) {
 
 				{/* Mobile Toggle */}
 				<button
-					className='md:hidden text-zinc-400'
+					className='lg:hidden text-zinc-400'
 					onClick={() => setIsOpen(!isOpen)}>
 					{isOpen ?
 						<X />
@@ -200,7 +200,7 @@ export function Navigation({ botInfo }: HeroProps) {
 				<motion.div
 					initial={{ opacity: 0, y: -20 }}
 					animate={{ opacity: 1, y: 0 }}
-					className='md:hidden absolute top-20 left-6 right-6 glass rounded-2xl p-6 flex flex-col gap-4'>
+					className='lg:hidden absolute top-20 left-6 right-6 glass rounded-2xl p-6 flex flex-col gap-4'>
 					<Link
 						to='/'
 						onClick={() => setIsOpen(false)}

@@ -40,9 +40,12 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 	const [guildSettings, setGuildSettings] = useState<any>(null);
 	const [autoResponders, setAutoResponders] = useState<any[]>([]);
 	const [welcomeSettings, setWelcomeSettings] = useState<any>(null);
+	const [confessSettings, setConfessSettings] = useState<any>(null);
+	const [editingResponder, setEditingResponder] = useState<any>(null);
 	const [newResponder, setNewResponder] = useState({
 		trigger: "",
 		response: "",
+		options: { matchMode: "exactly" },
 	});
 
 	const token = localStorage.getItem("ziji-token");
@@ -95,6 +98,7 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 			// Fetch extras
 			fetchAutoResponders(guildId);
 			fetchWelcomeSettings(guildId);
+			fetchConfessSettings(guildId);
 		} catch (err) {
 			console.error(err);
 		}
@@ -130,6 +134,21 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 		}
 	};
 
+	const fetchConfessSettings = async (guildId: string) => {
+		try {
+			const res = await fetch(apiUrl(`/guild/${guildId}/confess`), {
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"ngrok-skip-browser-warning": "true",
+				},
+			});
+			const data = await res.json();
+			setConfessSettings(data);
+		} catch (err) {
+			console.error(err);
+		}
+	};
+
 	const addAutoResponder = async () => {
 		if (!token || !selectedGuild || !newResponder.trigger || !newResponder.response) return;
 		setSaving(true);
@@ -141,9 +160,39 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 					"Content-Type": "application/json",
 					"ngrok-skip-browser-warning": "true",
 				},
-				body: JSON.stringify(newResponder),
+				body: JSON.stringify(editingResponder ? { ...newResponder, id: editingResponder._id || editingResponder.id } : newResponder),
 			});
-			setNewResponder({ trigger: "", response: "" });
+			setNewResponder({ trigger: "", response: "", options: { matchMode: "exactly" } });
+			setEditingResponder(null);
+			fetchAutoResponders(selectedGuild.id);
+		} catch (err) {
+			console.error(err);
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleEditResponder = (ar: any) => {
+		setEditingResponder(ar);
+		setNewResponder({
+			trigger: ar.trigger,
+			response: ar.response,
+			options: ar.options || { matchMode: "exactly" },
+		});
+		document.getElementById("autoresponder-form")?.scrollIntoView({ behavior: "smooth" });
+	};
+
+	const deleteAutoResponder = async (id: string) => {
+		if (!token || !selectedGuild) return;
+		setSaving(true);
+		try {
+			await fetch(apiUrl(`/guild/${selectedGuild.id}/autoresponder/${id}`), {
+				method: "DELETE",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"ngrok-skip-browser-warning": "true",
+				},
+			});
 			fetchAutoResponders(selectedGuild.id);
 		} catch (err) {
 			console.error(err);
@@ -166,6 +215,27 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 				body: JSON.stringify(welcomeSettings),
 			});
 			alert("Welcome settings saved!");
+		} catch (err) {
+			console.error(err);
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const saveConfess = async () => {
+		if (!token || !selectedGuild) return;
+		setSaving(true);
+		try {
+			await fetch(apiUrl(`/guild/${selectedGuild.id}/confess`), {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
+					"ngrok-skip-browser-warning": "true",
+				},
+				body: JSON.stringify(confessSettings),
+			});
+			alert("Confess settings saved!");
 		} catch (err) {
 			console.error(err);
 		} finally {
@@ -652,6 +722,103 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 													/>
 												</button>
 											</div>
+											{guildSettings.joinToCreate?.enabled && (
+												<div className='grid grid-cols-1 md:grid-cols-2 gap-4 mt-4'>
+													<div>
+														<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2'>Voice Channel ID</p>
+														<input
+															title='voiceChannelId'
+															className='w-full bg-black/20 border border-white/5 rounded-xl p-3 font-mono text-sm outline-none focus:border-discord/50 transition-colors'
+															value={guildSettings.joinToCreate.voiceChannelId || ""}
+															onChange={(e) =>
+																setGuildSettings({
+																	...guildSettings,
+																	joinToCreate: { ...guildSettings.joinToCreate, voiceChannelId: e.target.value },
+																})
+															}
+														/>
+													</div>
+													<div>
+														<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2'>Category ID</p>
+														<input
+															title='categoryId'
+															className='w-full bg-black/20 border border-white/5 rounded-xl p-3 font-mono text-sm outline-none focus:border-discord/50 transition-colors'
+															value={guildSettings.joinToCreate.categoryId || ""}
+															onChange={(e) =>
+																setGuildSettings({
+																	...guildSettings,
+																	joinToCreate: { ...guildSettings.joinToCreate, categoryId: e.target.value },
+																})
+															}
+														/>
+													</div>
+												</div>
+											)}
+										</div>
+
+										<div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+											<div className='p-6 bg-white/[0.02] border border-white/5 rounded-3xl space-y-4'>
+												<div className='flex items-center justify-between'>
+													<span className='font-black text-sm uppercase tracking-widest'>Voice Log</span>
+													<button
+														title='voiceLog'
+														onClick={() =>
+															setGuildSettings({
+																...guildSettings,
+																voice: { ...guildSettings.voice, logMode: !guildSettings.voice?.logMode },
+															})
+														}
+														className={`w-10 h-5 rounded-full transition-colors relative ${guildSettings.voice?.logMode ? "bg-discord" : "bg-zinc-800"}`}>
+														<div
+															className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${guildSettings.voice?.logMode ? "translate-x-5" : ""}`}
+														/>
+													</button>
+												</div>
+												<div>
+													<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2'>Music Channel ID</p>
+													<input
+														title='musicChannel'
+														className='w-full bg-black/20 border border-white/5 rounded-xl p-3 font-mono text-sm outline-none focus:border-discord/50 transition-colors'
+														value={guildSettings.music_channel || ""}
+														onChange={(e) => setGuildSettings({ ...guildSettings, music_channel: e.target.value })}
+													/>
+												</div>
+											</div>
+
+											<div className='p-6 bg-white/[0.02] border border-white/5 rounded-3xl space-y-4'>
+												<div className='flex items-center justify-between'>
+													<span className='font-black text-sm uppercase tracking-widest'>Noi Tu (Word Game)</span>
+													<button
+														title='noitu'
+														onClick={() =>
+															setGuildSettings({
+																...guildSettings,
+																noitu: { ...guildSettings.noitu, enabled: !guildSettings.noitu?.enabled },
+															})
+														}
+														className={`w-10 h-5 rounded-full transition-colors relative ${guildSettings.noitu?.enabled ? "bg-discord" : "bg-zinc-800"}`}>
+														<div
+															className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${guildSettings.noitu?.enabled ? "translate-x-5" : ""}`}
+														/>
+													</button>
+												</div>
+												{guildSettings.noitu?.enabled && (
+													<div>
+														<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2'>Game Channel ID</p>
+														<input
+															title='noituChannel'
+															className='w-full bg-black/20 border border-white/5 rounded-xl p-3 font-mono text-sm outline-none focus:border-discord/50 transition-colors'
+															value={guildSettings.noitu.channel || ""}
+															onChange={(e) =>
+																setGuildSettings({
+																	...guildSettings,
+																	noitu: { ...guildSettings.noitu, channel: e.target.value },
+																})
+															}
+														/>
+													</div>
+												)}
+											</div>
 										</div>
 
 										<div className='pt-8'>
@@ -677,21 +844,51 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 												{autoResponders.map((ar, idx) => (
 													<div
 														key={idx}
-														className='p-4 bg-white/5 rounded-2xl flex justify-between items-center border border-white/5'>
+														className='p-4 bg-white/5 rounded-2xl flex justify-between items-center border border-white/5 group relative overflow-hidden'>
 														<div>
-															<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>Trigger</p>
+															<p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+																Trigger ({ar.options?.matchMode || "exactly"})
+															</p>
 															<p className='font-bold text-sm'>{ar.trigger}</p>
 														</div>
-														<div className='text-right'>
+														<div className='text-right pr-10'>
 															<p className='text-[10px] font-bold text-discord uppercase tracking-widest'>Response</p>
 															<p className='font-mono text-xs opacity-70 truncate max-w-[200px]'>{ar.response}</p>
+														</div>
+														<div className='flex items-center gap-1 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity'>
+															<button
+																onClick={() => handleEditResponder(ar)}
+																className='p-2 text-zinc-500 hover:text-discord transition-colors'>
+																<Settings className='w-4 h-4' />
+															</button>
+															<button
+																onClick={() => deleteAutoResponder(ar._id || ar.id)}
+																className='p-2 text-zinc-500 hover:text-red-500 transition-colors'>
+																<AlertCircle className='w-5 h-5' />
+															</button>
 														</div>
 													</div>
 												))}
 											</div>
 
-											<div className='p-6 bg-white/5 rounded-3xl space-y-4 border border-white/10'>
-												<p className='font-bold text-xs uppercase tracking-widest text-zinc-400'>Add New Responder</p>
+											<div
+												id='autoresponder-form'
+												className='p-6 bg-white/5 rounded-3xl space-y-4 border border-white/10'>
+												<div className='flex items-center justify-between'>
+													<p className='font-bold text-xs uppercase tracking-widest text-zinc-400'>
+														{editingResponder ? "Edit Responder" : "Add New Responder"}
+													</p>
+													{editingResponder && (
+														<button
+															onClick={() => {
+																setEditingResponder(null);
+																setNewResponder({ trigger: "", response: "", options: { matchMode: "exactly" } });
+															}}
+															className='text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-widest'>
+															Cancel Edit
+														</button>
+													)}
+												</div>
 												<div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
 													<input
 														placeholder='Trigger (e.g. hello)'
@@ -716,11 +913,27 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 														}
 													/>
 												</div>
+												<div className='flex items-center gap-4'>
+													<span className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>Match Mode:</span>
+													{["exactly", "includes", "startsWith", "endsWith"].map((m) => (
+														<button
+															key={m}
+															onClick={() =>
+																setNewResponder({
+																	...newResponder,
+																	options: { ...newResponder.options, matchMode: m },
+																})
+															}
+															className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${newResponder.options.matchMode === m ? "bg-discord text-white" : "bg-white/5 text-zinc-500 hover:text-white"}`}>
+															{m}
+														</button>
+													))}
+												</div>
 												<button
 													onClick={addAutoResponder}
 													disabled={saving}
 													className='w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold text-xs uppercase tracking-widest transition-all'>
-													Add Responder
+													{editingResponder ? "Update Responder" : "Add Responder"}
 												</button>
 											</div>
 										</div>
@@ -809,6 +1022,97 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 														disabled={saving}
 														className='w-full py-4 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl font-black text-sm uppercase tracking-widest transition-all'>
 														Save Welcome Settings
+													</button>
+												</div>
+											)}
+										</div>
+
+										{/* Confession System Section */}
+										<div className='space-y-6 pt-10 border-t border-white/5'>
+											<div className='flex items-center gap-3'>
+												<ShieldCheck className='w-6 h-6 text-discord' />
+												<h4 className='font-black text-xl uppercase tracking-tighter'>Confession System</h4>
+											</div>
+
+											{confessSettings && (
+												<div className='space-y-6'>
+													<div className='flex items-center justify-between p-6 bg-white/[0.02] border border-white/5 rounded-3xl'>
+														<div className='flex items-center gap-3'>
+															<span className='font-black text-sm uppercase tracking-widest'>Enable System</span>
+														</div>
+														<button
+															title='enableConfess'
+															onClick={() =>
+																setConfessSettings({
+																	...confessSettings,
+																	enabled: !confessSettings.enabled,
+																})
+															}
+															className={`w-12 h-6 rounded-full transition-colors relative ${confessSettings.enabled ? "bg-discord" : "bg-zinc-800"}`}>
+															<div
+																className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${confessSettings.enabled ? "translate-x-6" : ""}`}
+															/>
+														</button>
+													</div>
+
+													<div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+														<div className='space-y-3'>
+															<label className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+																Confession Channel ID
+															</label>
+															<input
+																title='confessChannel'
+																className='w-full bg-white/5 p-4 rounded-xl text-sm border border-white/10 font-mono'
+																value={confessSettings.channelId || ""}
+																onChange={(e) =>
+																	setConfessSettings({
+																		...confessSettings,
+																		channelId: e.target.value,
+																	})
+																}
+															/>
+														</div>
+														<div className='space-y-3'>
+															<div className='flex items-center justify-between mb-1'>
+																<label className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+																	Review System
+																</label>
+																<button
+																	title='reviewSystem'
+																	onClick={() =>
+																		setConfessSettings({
+																			...confessSettings,
+																			reviewSystem: !confessSettings.reviewSystem,
+																		})
+																	}
+																	className={`w-10 h-5 rounded-full transition-colors relative ${confessSettings.reviewSystem ? "bg-discord" : "bg-zinc-800"}`}>
+																	<div
+																		className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${confessSettings.reviewSystem ? "translate-x-5" : ""}`}
+																	/>
+																</button>
+															</div>
+															{confessSettings.reviewSystem && (
+																<input
+																	placeholder='Review Channel ID'
+																	title='reviewChannelId'
+																	className='w-full bg-white/5 p-4 rounded-xl text-sm border border-white/10 font-mono'
+																	value={confessSettings.reviewChannelId || ""}
+																	onChange={(e) =>
+																		setConfessSettings({
+																			...confessSettings,
+																			reviewChannelId: e.target.value,
+																		})
+																	}
+																/>
+															)}
+														</div>
+													</div>
+
+													<button
+														onClick={saveConfess}
+														disabled={saving}
+														className='w-full py-4 bg-discord/20 hover:bg-discord/30 text-discord border border-discord/30 rounded-xl font-black text-sm uppercase tracking-widest transition-all'>
+														Save Confession Settings
 													</button>
 												</div>
 											)}
