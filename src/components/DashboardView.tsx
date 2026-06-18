@@ -160,7 +160,9 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 					"Content-Type": "application/json",
 					"ngrok-skip-browser-warning": "true",
 				},
-				body: JSON.stringify(editingResponder ? { ...newResponder, id: editingResponder._id || editingResponder.id } : newResponder),
+				body: JSON.stringify(
+					editingResponder ? { ...newResponder, id: editingResponder._id || editingResponder.id } : newResponder,
+				),
 			});
 			setNewResponder({ trigger: "", response: "", options: { matchMode: "exactly" } });
 			setEditingResponder(null);
@@ -857,11 +859,13 @@ export function DashboardView({ botInfo, loading, error }: DashboardViewProps) {
 														</div>
 														<div className='flex items-center gap-1 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity'>
 															<button
+																title='Edit Responder'
 																onClick={() => handleEditResponder(ar)}
 																className='p-2 text-zinc-500 hover:text-discord transition-colors'>
 																<Settings className='w-4 h-4' />
 															</button>
 															<button
+																title='Delete Responder'
 																onClick={() => deleteAutoResponder(ar._id || ar.id)}
 																className='p-2 text-zinc-500 hover:text-red-500 transition-colors'>
 																<AlertCircle className='w-5 h-5' />
