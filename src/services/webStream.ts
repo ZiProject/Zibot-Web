@@ -9,11 +9,11 @@ function buildUrl(path: string, track: Track): string {
 }
 
 export function getAudioStreamUrl(track: Track): string {
-	return buildUrl("/api/stream/audio", track);
+	return buildUrl("/stream/audio", track);
 }
 
 export function getVideoStreamUrl(track: Track): string {
-	return buildUrl("/api/stream/video", track);
+	return buildUrl("/stream/video", track);
 }
 
 export function getStreamUrl(track: Track, mode: StreamMode): string | null {
