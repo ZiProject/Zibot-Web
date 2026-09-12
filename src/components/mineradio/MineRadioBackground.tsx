@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { motion } from "motion/react";
 import { proxyImage } from "../../services/discordActivity";
 import type { Track } from "../../types/track";
@@ -89,17 +89,14 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 	}, []);
 
 	const glow = Math.max(0, Math.min(1.4, intensity));
+	const glassStyle = {
+		"--glass-x": `${pointer.x}%`,
+		"--glass-y": `${pointer.y}%`,
+		"--glass-strength": glow,
+	} as CSSProperties;
 
 	return (
-		<div
-			className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-			aria-hidden="true"
-			style={{
-				"--glass-x": `${pointer.x}%`,
-				"--glass-y": `${pointer.y}%`,
-				"--glass-strength": glow,
-			} as React.CSSProperties}
-		>
+		<div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true" style={glassStyle}>
 			<style>{`
 				@keyframes mineradio-glass-sweep {
 					0%, 58% { transform: translate3d(-115%, 0, 0) rotate(18deg); opacity: 0; }
@@ -112,8 +109,7 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 					50% { opacity: .16; }
 				}
 
-				/* Every MineRadio frosted panel gets a very thin optical highlight.
-				   The moving gradient is clipped to the rounded glass surface. */
+				/* Optical highlight applied to every frosted MineRadio panel. */
 				[class*="backdrop-blur-2xl"], [class*="backdrop-blur-3xl"] {
 					position: relative;
 					overflow: hidden;
