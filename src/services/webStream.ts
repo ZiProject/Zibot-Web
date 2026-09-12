@@ -1,4 +1,4 @@
-import { apiUrl } from "./discordActivity";
+import { apiUrl, isDiscordActivity } from "./discordActivity";
 import type { StreamMode, StreamTrackDescriptor, Track } from "../types/track";
 import { toStreamTrack } from "../types/track";
 
@@ -8,12 +8,16 @@ function buildUrl(path: string, track: Track): string {
 	return `${apiUrl(path)}?trackData=${query}`;
 }
 
+function streamPath(path: "/audio" | "/video"): string {
+	return isDiscordActivity() ? `/stream${path}` : `/api/stream${path}`;
+}
+
 export function getAudioStreamUrl(track: Track): string {
-	return buildUrl("/stream/audio", track);
+	return buildUrl(streamPath("/audio"), track);
 }
 
 export function getVideoStreamUrl(track: Track): string {
-	return buildUrl("/stream/video", track);
+	return buildUrl(streamPath("/video"), track);
 }
 
 export function getStreamUrl(track: Track, mode: StreamMode): string | null {
