@@ -91,7 +91,15 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 	const glow = Math.max(0, Math.min(1.4, intensity));
 
 	return (
-		<div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
+		<div
+			className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+			aria-hidden="true"
+			style={{
+				"--glass-x": `${pointer.x}%`,
+				"--glass-y": `${pointer.y}%`,
+				"--glass-strength": glow,
+			} as React.CSSProperties}
+		>
 			<style>{`
 				@keyframes mineradio-glass-sweep {
 					0%, 58% { transform: translate3d(-115%, 0, 0) rotate(18deg); opacity: 0; }
@@ -102,6 +110,44 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 				@keyframes mineradio-glass-shimmer {
 					0%, 100% { opacity: .08; }
 					50% { opacity: .16; }
+				}
+
+				/* Every MineRadio frosted panel gets a very thin optical highlight.
+				   The moving gradient is clipped to the rounded glass surface. */
+				[class*="backdrop-blur-2xl"], [class*="backdrop-blur-3xl"] {
+					position: relative;
+					overflow: hidden;
+					isolation: isolate;
+				}
+				[class*="backdrop-blur-2xl"]::before, [class*="backdrop-blur-3xl"]::before {
+					content: "";
+					position: absolute;
+					inset: 0;
+					pointer-events: none;
+					border-radius: inherit;
+					background:
+						radial-gradient(ellipse 70% 90% at var(--glass-x, 50%) var(--glass-y, 40%), rgba(255,255,255,.105), transparent 42%),
+						linear-gradient(112deg, transparent 35%, rgba(255,255,255,.035) 45%, rgba(255,255,255,.13) 49%, rgba(255,255,255,.025) 54%, transparent 65%);
+					mix-blend-mode: screen;
+					opacity: calc(var(--glass-strength, 1) * .62);
+					transform: translate3d(calc((var(--glass-x, 50%) - 50%) * .045), calc((var(--glass-y, 50%) - 50%) * .025), 0);
+					transition: transform .45s ease-out, opacity .5s ease;
+					z-index: 20;
+				}
+				[class*="backdrop-blur-2xl"]::after, [class*="backdrop-blur-3xl"]::after {
+					content: "";
+					position: absolute;
+					inset: 0;
+					pointer-events: none;
+					border-radius: inherit;
+					box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.035), inset 0 -24px 50px rgba(255,255,255,.018);
+					z-index: 19;
+				}
+
+				@media (prefers-reduced-motion: reduce) {
+					[class*="backdrop-blur-2xl"]::before, [class*="backdrop-blur-3xl"]::before {
+						transition: none;
+					}
 				}
 			`}</style>
 
@@ -141,8 +187,6 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 				}}
 			/>
 
-			{/* Glass optics: a broad Fresnel reflection follows the cursor as if light
-			    were sliding across a transparent pane in front of the artwork. */}
 			<div
 				className="absolute -inset-[35%] mix-blend-screen blur-2xl transition-transform duration-700 ease-out"
 				style={{
@@ -152,14 +196,11 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 				}}
 			/>
 
-			{/* Thin specular streak, intentionally slow so it reads as reflected light,
-			    not a loading animation. */}
 			<div
 				className="absolute inset-y-[-35%] left-0 w-[13%] bg-gradient-to-r from-transparent via-white/10 to-transparent blur-xl"
 				style={{ animation: "mineradio-glass-sweep 9s ease-in-out infinite", opacity: 0.9 * glow }}
 			/>
 
-			{/* Pointer hotspot + soft halo gives glass a parallax/Fresnel response. */}
 			<div
 				className="absolute h-[46vw] max-h-[620px] w-[46vw] max-w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full mix-blend-screen blur-3xl transition-[left,top] duration-500 ease-out"
 				style={{
@@ -170,7 +211,6 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 				}}
 			/>
 
-			{/* Fine edge reflection around the viewport, similar to a coated glass surface. */
 			<div
 				className="absolute inset-0"
 				style={{
