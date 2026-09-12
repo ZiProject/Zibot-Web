@@ -44,7 +44,7 @@ async function pipeStream(req, res, createStream, contentType) {
 
 	try {
 		const player = await getManager().create("webid");
-		const stream = await createStream(player, trackData, controller.signal);
+		const stream = await createStream(player, trackData);
 
 		if (!stream || typeof stream.pipe !== "function") {
 			throw new TypeError("ZiPlayer did not return a readable stream");
@@ -73,11 +73,11 @@ async function pipeStream(req, res, createStream, contentType) {
 }
 
 router.get("/audio", (req, res) =>
-	pipeStream(req, res, (player, trackData, signal) => player.save(trackData, { signal }), "audio/webm"),
+	pipeStream(req, res, (player, trackData) => player.save(trackData), "audio/webm"),
 );
 
 router.get("/video", (req, res) =>
-	pipeStream(req, res, (player, trackData, signal) => player.saveVideo(trackData, { signal }), "application/vnd.yt-ump"),
+	pipeStream(req, res, (player, trackData) => player.saveVideo(trackData), "application/vnd.yt-ump"),
 );
 
 module.exports.execute = () => {
