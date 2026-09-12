@@ -23,6 +23,7 @@ function AppContent() {
 	const location = useLocation();
 	const { t } = useLanguage();
 	const isMinimized = useIsMinimized();
+	const isMusicRoute = location.pathname === "/dashboard/music";
 
 	useEffect(() => {
 		window.scrollTo(0, 0);
@@ -60,9 +61,9 @@ function AppContent() {
 	}, [botInfo]);
 
 	return (
-		<div className='min-h-screen bg-vibrant-bg flex flex-col'>
-			{!isMinimized && <Navigation botInfo={botInfo} />}
-			<main className='flex-grow'>
+		<div className={isMusicRoute ? "min-h-screen bg-black" : "min-h-screen bg-vibrant-bg flex flex-col"}>
+			{!isMinimized && !isMusicRoute && <Navigation botInfo={botInfo} />}
+			<main className={isMusicRoute ? "min-h-screen" : "flex-grow"}>
 				<Routes>
 					<Route path='/' element={<><Hero botInfo={botInfo} /><Features /></>} />
 					<Route path='/dashboard' element={<DashboardView botInfo={botInfo} loading={loading} error={error} />} />
@@ -72,7 +73,7 @@ function AppContent() {
 					<Route path='/login-success' element={<LoginSuccess />} />
 				</Routes>
 			</main>
-			{!isMinimized && (
+			{!isMinimized && !isMusicRoute && (
 				<footer className='mt-20 py-10 border-t border-white/5 px-6'>
 					<div className='max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-[10px] uppercase font-bold tracking-[0.2em] text-zinc-600'>
 						<div className='flex gap-10'><span>© 2024 ZiProject</span><span>API: api.ziji.best</span></div>
