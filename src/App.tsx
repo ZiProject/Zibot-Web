@@ -11,7 +11,7 @@ import { DashboardView } from "./components/DashboardView";
 import { Features } from "./components/Features";
 import { TermsView, PrivacyView } from "./components/LegalViews";
 import { LoginSuccess } from "./components/LoginSuccess";
-import { MineRadioPlayer } from "./components/MineRadioPlayer";
+import { MineRadioPlayerV2 } from "./components/MineRadioPlayerV2";
 import { isDiscordActivity, loginViaActivity, BotInfo, fetchBotInfo, useIsMinimized } from "./services/discordActivity";
 
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
@@ -61,13 +61,13 @@ function AppContent() {
 	}, [botInfo]);
 
 	return (
-		<div className={isMusicRoute ? "min-h-screen bg-black" : "min-h-screen bg-vibrant-bg flex flex-col"}>
+		<div className={isMusicRoute ? "h-[100dvh] overflow-hidden bg-black" : "min-h-screen bg-vibrant-bg flex flex-col"}>
 			{!isMinimized && !isMusicRoute && <Navigation botInfo={botInfo} />}
-			<main className={isMusicRoute ? "min-h-screen" : "flex-grow"}>
+			<main className={isMusicRoute ? "h-[100dvh] overflow-hidden" : "flex-grow"}>
 				<Routes>
 					<Route path='/' element={<><Hero botInfo={botInfo} /><Features /></>} />
 					<Route path='/dashboard' element={<DashboardView botInfo={botInfo} loading={loading} error={error} />} />
-					<Route path='/dashboard/music' element={<MineRadioPlayer />} />
+					<Route path='/dashboard/music' element={<MineRadioPlayerV2 />} />
 					<Route path='/terms' element={<TermsView />} />
 					<Route path='/privacy' element={<PrivacyView />} />
 					<Route path='/login-success' element={<LoginSuccess />} />
