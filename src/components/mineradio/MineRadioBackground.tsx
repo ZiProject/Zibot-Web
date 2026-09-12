@@ -30,6 +30,7 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 	const artwork = useMemo(() => artworkOf(track), [track?.thumbnail]);
 	const fallbackAccent = useMemo(() => hashColor(`${track?.id ?? "idle"}:${artwork}`), [track?.id, artwork]);
 	const [accent, setAccent] = useState(fallbackAccent);
+	const [pointer, setPointer] = useState({ x: 50, y: 42 });
 
 	useEffect(() => {
 		setAccent(fallbackAccent);
@@ -69,10 +70,41 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 		};
 	}, [artwork, fallbackAccent]);
 
+	useEffect(() => {
+		let frame = 0;
+		const onPointerMove = (event: PointerEvent) => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				setPointer({
+					x: (event.clientX / Math.max(1, window.innerWidth)) * 100,
+					y: (event.clientY / Math.max(1, window.innerHeight)) * 100,
+				});
+			});
+		};
+		window.addEventListener("pointermove", onPointerMove, { passive: true });
+		return () => {
+			cancelAnimationFrame(frame);
+			window.removeEventListener("pointermove", onPointerMove);
+		};
+	}, []);
+
 	const glow = Math.max(0, Math.min(1.4, intensity));
 
 	return (
 		<div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
+			<style>{`
+				@keyframes mineradio-glass-sweep {
+					0%, 58% { transform: translate3d(-115%, 0, 0) rotate(18deg); opacity: 0; }
+					66% { opacity: .18; }
+					82% { transform: translate3d(610%, 0, 0) rotate(18deg); opacity: .04; }
+					100% { transform: translate3d(610%, 0, 0) rotate(18deg); opacity: 0; }
+				}
+				@keyframes mineradio-glass-shimmer {
+					0%, 100% { opacity: .08; }
+					50% { opacity: .16; }
+				}
+			`}</style>
+
 			{videoUrl ? (
 				<video
 					key={videoUrl}
@@ -108,6 +140,46 @@ export function MineRadioBackground({ track, intensity = 1, videoUrl }: MineRadi
 					background: `radial-gradient(circle at 50% 42%, color-mix(in srgb, ${accent} ${Math.round(30 * glow)}%, transparent), transparent 42%), linear-gradient(180deg, rgba(4,5,9,.16), rgba(4,5,9,.56))`,
 				}}
 			/>
+
+			{/* Glass optics: a broad Fresnel reflection follows the cursor as if light
+			    were sliding across a transparent pane in front of the artwork. */}
+			<div
+				className="absolute -inset-[35%] mix-blend-screen blur-2xl transition-transform duration-700 ease-out"
+				style={{
+					opacity: 0.13 * glow,
+					transform: `translate3d(${(pointer.x - 50) * 0.14}%, ${(pointer.y - 50) * 0.06}%, 0) rotate(-9deg)`,
+					background: "linear-gradient(112deg, transparent 39%, rgba(255,255,255,.025) 44%, rgba(255,255,255,.18) 49%, rgba(255,255,255,.045) 53%, transparent 60%)",
+				}}
+			/>
+
+			{/* Thin specular streak, intentionally slow so it reads as reflected light,
+			    not a loading animation. */}
+			<div
+				className="absolute inset-y-[-35%] left-0 w-[13%] bg-gradient-to-r from-transparent via-white/10 to-transparent blur-xl"
+				style={{ animation: "mineradio-glass-sweep 9s ease-in-out infinite", opacity: 0.9 * glow }}
+			/>
+
+			{/* Pointer hotspot + soft halo gives glass a parallax/Fresnel response. */}
+			<div
+				className="absolute h-[46vw] max-h-[620px] w-[46vw] max-w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full mix-blend-screen blur-3xl transition-[left,top] duration-500 ease-out"
+				style={{
+					left: `${pointer.x}%`,
+					top: `${pointer.y}%`,
+					opacity: 0.055 * glow,
+					background: `radial-gradient(circle, ${accent}, transparent 66%)`,
+				}}
+			/>
+
+			{/* Fine edge reflection around the viewport, similar to a coated glass surface. */
+			<div
+				className="absolute inset-0"
+				style={{
+					opacity: 0.18 * glow,
+					background: "linear-gradient(115deg, rgba(255,255,255,.11), transparent 13%, transparent 72%, rgba(255,255,255,.055)), radial-gradient(ellipse at center, transparent 58%, rgba(255,255,255,.07) 100%)",
+					animation: "mineradio-glass-shimmer 6s ease-in-out infinite",
+				}}
+			/>
+
 			<div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,transparent_20%,rgba(0,0,0,.38)_100%)]" />
 			<div className="absolute inset-0 bg-black/20" />
 			<div className="absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
