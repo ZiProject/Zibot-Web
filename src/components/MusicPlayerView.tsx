@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { WebAudioClient } from "@ziplayer/client";
 import { apiUrl, getWsUrl, isDiscordActivity, proxyImage, useIsMinimized } from "../services/discordActivity";
 import {
 	Play,
@@ -27,10 +28,11 @@ import { BotInfo } from "../services/discordActivity";
 
 interface Track {
 	title: string;
-	url: string;
+	url: string | null;
 	duration: string | number;
-	thumbnail: string;
-	author: string;
+	thumbnail: string | null;
+	author: string | null;
+	isLive?: boolean;
 }
 
 interface PlayerStats {
@@ -51,6 +53,16 @@ interface HeroProps {
 	botInfo: BotInfo | null;
 }
 
+function getStreamWebSocketUrl() {
+	const url = new URL(getWsUrl(), window.location.href);
+	if (url.protocol === "https:") url.protocol = "wss:";
+	else if (url.protocol === "http:") url.protocol = "ws:";
+	url.pathname = `${url.pathname.replace(/\/$/, "")}/stream`;
+	url.search = "";
+	url.hash = "";
+	return url.toString();
+}
+
 export function MusicPlayerView({ botInfo }: HeroProps) {
 	const { t } = useLanguage();
 	const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -67,6 +79,14 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [voiceChannel, setVoiceChannel] = useState<{ channelName: string; guildName: string } | null>(null);
 	const [isJoining, setIsJoining] = useState(false);
 	const [joinError, setJoinError] = useState<string | null>(null);
+	const [webAudioMode, setWebAudioMode] = useState(false);
+	const [webStreamActive, setWebStreamActive] = useState(false);
+	const [webAudioConnected, setWebAudioConnected] = useState(false);
+	const [webAudioStatus, setWebAudioStatus] = useState("");
+	const [webAudioError, setWebAudioError] = useState<string | null>(null);
+	const webAudioClient = useRef<WebAudioClient | null>(null);
+	const webStreamActiveRef = useRef(false);
+	const webAudioModeRef = useRef(false);
 
 	// Thêm hằng số này bên ngoài Component hoặc trong component
 	const SILENT_SOUND_URL =
@@ -108,12 +128,14 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	}, []);
 	// Calculate progress percentage with auto-detect duration format
 	useEffect(() => {
-		if (stats?.track?.duration) {
-			const durationMs = parseDuration(stats.track.duration);
-			if (durationMs > 0) {
-				const currentProgress = (stats.timestamp / durationMs) * 100;
-				setProgress(Math.min(100, Math.max(0, currentProgress)));
-			}
+		if (!stats?.track?.duration) {
+			setProgress(0);
+			return;
+		}
+		const durationMs = parseDuration(stats.track.duration);
+		if (durationMs > 0) {
+			const currentProgress = (stats.timestamp / durationMs) * 100;
+			setProgress(Math.min(100, Math.max(0, currentProgress)));
 		}
 	}, [stats?.timestamp, stats?.track?.duration]);
 	const [volume, setVolume] = useState(50);
@@ -126,6 +148,230 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const token = localStorage.getItem("ziji-token");
 	const baseUrl = apiUrl("");
 	const wsUrl = getWsUrl();
+	const streamWsUrl = getStreamWebSocketUrl();
+
+	const setWebStreamRunning = (active: boolean) => {
+		webStreamActiveRef.current = active;
+		setWebStreamActive(active);
+	};
+
+	const enterWebAudioMode = () => {
+		webAudioModeRef.current = true;
+		setWebAudioMode(true);
+		setStats(null);
+	};
+
+	const getWebAudioClient = () => {
+		if (webAudioClient.current) return webAudioClient.current;
+
+		const client = new WebAudioClient({
+			webSocketFactory: (clientUrl) => {
+				const authToken = clientUrl.searchParams.get("token");
+				if (!authToken) throw new Error("Web audio authentication token is missing");
+				clientUrl.searchParams.delete("token");
+				const socket = new WebSocket(streamWsUrl);
+				socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "auth", token: authToken })), { once: true });
+				return socket;
+			},
+		});
+		client.addEventListener("statechange", ({ detail }) => {
+			setWebAudioConnected(detail.state !== "disconnected");
+			if (detail.state === "playing") setWebAudioStatus("Playing in browser");
+			else if (detail.state === "waiting") setWebAudioStatus("Waiting for audio stream");
+			else if (detail.state === "connected") setWebAudioStatus("Connected; waiting for playback");
+			else if (detail.state === "disconnected") setWebAudioStatus("Browser audio disconnected");
+		});
+		client.addEventListener("error", ({ detail }) => {
+			console.error("Web audio stream error:", detail.error);
+			setWebAudioError(detail.error.message);
+		});
+		client.addEventListener("close", ({ detail }) => {
+			if (detail.code !== 1000) setWebAudioStatus(`Audio connection closed (${detail.code})`);
+		});
+		webAudioClient.current = client;
+		return client;
+	};
+
+	const playOnWeb = async (query: string) => {
+		if (!token) {
+			setWebAudioError("Please log in to use browser audio.");
+			return;
+		}
+		setWebAudioError(null);
+		setWebAudioStatus("Connecting browser audio…");
+		try {
+			const client = getWebAudioClient();
+			if (client.state === "disconnected") {
+				await client.connect({ gatewayUrl: streamWsUrl, token, nextPublisher: true });
+			}
+			const response = await fetch(apiUrl("/api/stream/play"), {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
+					"ngrok-skip-browser-warning": "true",
+				},
+				body: JSON.stringify({ query }),
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || `Playback request failed (${response.status})`);
+			if (!result.sessionId) throw new Error("The audio player did not return a session ID");
+			enterWebAudioMode();
+			setWebStreamRunning(true);
+			setWebAudioStatus(`Loading ${result.track?.title || "track"}…`);
+			setError(null);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Could not start browser audio";
+			console.error("Browser audio playback failed:", err);
+			setWebAudioError(message);
+			setWebAudioStatus("Browser audio failed");
+		}
+	};
+
+	const sendWebStreamControl = async (action: string, values: Record<string, unknown> = {}) => {
+		if (!token) throw new Error("Please log in to control browser audio");
+		const response = await fetch(apiUrl("/api/stream/control"), {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+				"ngrok-skip-browser-warning": "true",
+			},
+			body: JSON.stringify({ action, ...values }),
+		});
+		const result = await response.json();
+		if (!response.ok) throw new Error(result.error || `Playback control failed (${response.status})`);
+		return result;
+	};
+
+	const toggleWebAudioMode = () => {
+		if (webAudioMode && webStreamActiveRef.current) {
+			void sendWebStreamControl("stop")
+				.catch((err) => console.error("Could not stop browser audio:", err))
+				.finally(() => {
+					void webAudioClient.current?.disconnect();
+					setWebStreamRunning(false);
+				});
+		}
+		const nextMode = !webAudioMode;
+		webAudioModeRef.current = nextMode;
+		setWebAudioMode(nextMode);
+		setStats(null);
+	};
+
+	useEffect(() => {
+		if (!webStreamActive || !token) return;
+		let cancelled = false;
+		const controller = new AbortController();
+		let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
+		const applyState = (state: any) => {
+			setStats({
+				event: "statistics",
+				timestamp: state.timestamp ?? 0,
+				listeners: 0,
+				tracks: state.queue?.length ?? 0,
+				volume: state.volume ?? 0,
+				paused: Boolean(state.paused),
+				repeatMode: state.loopMode ?? "off",
+				autoPlay: Boolean(state.autoPlay),
+				lockStatus: false,
+				track: state.currentTrack,
+				queue: state.queue ?? [],
+				related: [],
+			});
+			setVolume(state.volume ?? 0);
+		};
+
+		const connectStateStream = async () => {
+			let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+			try {
+				const response = await fetch(apiUrl("/api/stream/state"), {
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"ngrok-skip-browser-warning": "true",
+					},
+					signal: controller.signal,
+				});
+				if (response.status === 404) {
+					if (!cancelled) setWebAudioStatus("Waiting for a browser audio player");
+					return;
+				}
+				if (!response.ok) {
+					const result = await response.json();
+					throw new Error(result.error || `Player state request failed (${response.status})`);
+				}
+				if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+					throw new Error("Player state endpoint did not return an SSE stream");
+				}
+				if (cancelled) return;
+				setWebAudioStatus("Receiving live player updates");
+
+				reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				const consumeEvent = (block: string) => {
+					let eventName = "message";
+					const data: string[] = [];
+					for (const line of block.split(/\r\n|\r|\n/)) {
+						if (line.startsWith(":")) continue;
+						const separator = line.indexOf(":");
+						const field = separator === -1 ? line : line.slice(0, separator);
+						const value = separator === -1 ? "" : line.slice(separator + 1).replace(/^ /, "");
+						if (field === "event") eventName = value;
+						else if (field === "data") data.push(value);
+					}
+					if (!data.length || cancelled) return;
+					try {
+						const payload = JSON.parse(data.join("\n"));
+						if (eventName === "player-state") applyState(payload);
+						else if (eventName === "player-state-error") {
+							throw new Error(payload.message || "Player state is temporarily unavailable");
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : "Invalid player state event";
+						console.error("Could not process player state event:", err);
+						setWebAudioError(message);
+					}
+				};
+
+				while (!cancelled) {
+					const { value, done } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					let boundary = buffer.search(/\r?\n\r?\n/);
+					while (boundary !== -1) {
+						const block = buffer.slice(0, boundary);
+						const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0].length ?? 2;
+						buffer = buffer.slice(boundary + separator);
+						consumeEvent(block);
+						boundary = buffer.search(/\r?\n\r?\n/);
+					}
+				}
+			} catch (err) {
+				if (cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
+				const message = err instanceof Error ? err.message : "Could not read browser player state";
+				console.error("Browser player state stream failed:", err);
+				setWebAudioError(message);
+			} finally {
+				reader?.releaseLock();
+				if (!cancelled) reconnectTimeout = setTimeout(connectStateStream, 2000);
+			}
+		};
+
+		void connectStateStream();
+		return () => {
+			cancelled = true;
+			controller.abort();
+			if (reconnectTimeout) clearTimeout(reconnectTimeout);
+		};
+	}, [webStreamActive, token]);
+
+	useEffect(
+		() => () => {
+			void webAudioClient.current?.disconnect();
+		},
+		[],
+	);
 
 	const handleJoinVoice = async () => {
 		if (!token) return;
@@ -202,9 +448,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						break;
 
 					case "statistics":
-						setStats(data);
-						setVolume(data.volume);
-						setIsVoiceConnected(true);
+						if (!webAudioModeRef.current && !webStreamActiveRef.current) {
+							setStats(data);
+							setVolume(data.volume);
+							setIsVoiceConnected(true);
+						}
 						break;
 
 					case "error":
@@ -284,7 +532,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		// 1. Cập nhật Metadata
 		navigator.mediaSession.metadata = new MediaMetadata({
 			title: track.title,
-			artist: track.author,
+			artist: track.author || "Unknown artist",
 			album: "Ziji Melody",
 			artwork: [
 				{
@@ -377,6 +625,67 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	const sendCommand = (event: string, data: any = {}) => {
+		if (webAudioModeRef.current) {
+			if (!webStreamActiveRef.current) {
+				setWebAudioError("Start browser playback by selecting a track from search results.");
+				return;
+			}
+
+			let action: string;
+			let values: Record<string, unknown> = {};
+			switch (event.toLowerCase()) {
+				case "play":
+				case "playnext":
+					if (typeof data.trackUrl === "string") void playOnWeb(data.trackUrl);
+					return;
+				case "pause":
+					action = stats?.paused ? "resume" : "pause";
+					break;
+				case "skip":
+					action = "skip";
+					break;
+				case "seek":
+					action = "seek";
+					values = { positionMs: data.position };
+					break;
+				case "volume":
+					action = "volume";
+					values = { volume: data.volume };
+					break;
+				case "loop":
+					action = "loop";
+					values = {
+						mode:
+							stats?.repeatMode === "off" ? "track"
+							: stats?.repeatMode === "track" ? "queue"
+							: "off",
+					};
+					break;
+				case "autoplay":
+					action = "autoplay";
+					values = { enabled: !stats?.autoPlay };
+					break;
+				case "back":
+					setWebAudioError("Previous-track playback is not supported by this player yet.");
+					return;
+				case "lock":
+				case "shuffle":
+					setWebAudioError(`${event} is not supported by browser audio playback.`);
+					return;
+				case "deltrack":
+					setWebAudioError("Removing queued tracks is not supported by browser audio playback yet.");
+					return;
+				default:
+					return;
+			}
+			void sendWebStreamControl(action, values).catch((err) => {
+				const message = err instanceof Error ? err.message : "Browser audio control failed";
+				console.error("Browser audio control failed:", err);
+				setWebAudioError(message);
+			});
+			return;
+		}
+
 		if (ws && authenticated) {
 			ws.send(JSON.stringify({ event, ...data }));
 		}
@@ -398,15 +707,21 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			);
 		}
 
-		if (!connected) {
+		if (!connected && !webAudioMode) {
 			return (
-				<div className='fixed inset-0 bg-[#050505] flex items-center justify-center select-none'>
+				<div className='fixed inset-0 bg-[#050505] flex flex-col items-center justify-center gap-3 p-4 text-center select-none'>
 					<div className='w-8 h-8 border-2 border-white/10 border-t-discord rounded-full animate-spin'></div>
+					<p className='text-xs text-zinc-400'>Discord player reconnecting…</p>
+					<button
+						onClick={enterWebAudioMode}
+						className='rounded-xl bg-white/10 px-4 py-2 text-[10px] font-bold text-white'>
+						Use browser audio
+					</button>
 				</div>
 			);
 		}
 
-		if (!isVoiceConnected) {
+		if (!isVoiceConnected && !webAudioMode) {
 			return (
 				<div className='fixed inset-0 bg-[#050505] flex flex-col items-center justify-center p-4 text-center select-none'>
 					<Music className='w-8 h-8 text-zinc-500 mb-2 animate-pulse' />
@@ -416,6 +731,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						disabled={isJoining}
 						className='px-4 py-2 bg-discord hover:brightness-110 disabled:opacity-50 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all'>
 						{isJoining ? "Connecting..." : "Connect Voice"}
+					</button>
+					<button
+						onClick={enterWebAudioMode}
+						className='px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all'>
+						Use browser audio
 					</button>
 					{joinError && <p className='text-vibrant-pink font-bold text-[9px] mt-2 truncate w-full px-2'>{joinError}</p>}
 				</div>
@@ -480,6 +800,44 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						</button>
 					</div>
 				</div>
+				{webAudioMode && (
+					<div className='shrink-0 border-t border-white/5 bg-black/80 p-2 space-y-2'>
+						<form
+							className='flex gap-2'
+							onSubmit={(event) => {
+								event.preventDefault();
+								void handleSearch();
+							}}>
+							<input
+								value={searchQuery}
+								onChange={(event) => setSearchQuery(event.target.value)}
+								placeholder='Search music'
+								className='min-w-0 flex-1 rounded-lg bg-white/10 px-3 py-2 text-xs text-white outline-none'
+							/>
+							<button
+								type='submit'
+								className='rounded-lg bg-discord px-3 text-white'
+								title='Search'>
+								<Search className='h-4 w-4' />
+							</button>
+							<button
+								type='button'
+								onClick={toggleWebAudioMode}
+								className='rounded-lg bg-white/10 px-2 text-[10px] text-white'>
+								Discord
+							</button>
+						</form>
+						{searchResults.slice(0, 3).map((track, index) => (
+							<button
+								key={`${track.url || track.title}-${index}`}
+								onClick={() => void playOnWeb(track.url || track.title)}
+								className='block w-full truncate rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-white'>
+								{track.title}
+							</button>
+						))}
+						{webAudioError && <p className='px-1 text-[10px] text-vibrant-pink'>{webAudioError}</p>}
+					</div>
+				)}
 			</div>
 		);
 	}
@@ -499,15 +857,21 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		);
 	}
 
-	if (!connected) {
+	if (!connected && !webAudioMode) {
 		return (
-			<div className='flex items-center justify-center h-[calc(100vh-64px)]'>
+			<div className='flex h-[calc(100vh-64px)] flex-col items-center justify-center gap-4'>
 				<div className='w-12 h-12 border-4 border-white/10 border-t-discord rounded-full animate-spin'></div>
+				<p className='text-sm text-zinc-400'>Discord player reconnecting…</p>
+				<button
+					onClick={enterWebAudioMode}
+					className='rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white'>
+					Use browser audio
+				</button>
 			</div>
 		);
 	}
 
-	if (!isVoiceConnected) {
+	if (!isVoiceConnected && !webAudioMode) {
 		return (
 			<div className='fixed inset-0 top-16 bg-[#09090b] flex items-center justify-center p-6 overflow-hidden select-none'>
 				{/* Animated Background Ambient Glows */}
@@ -537,6 +901,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								<span>Connecting Bot...</span>
 							</>
 						:	<span>Connect Bot to Voice</span>}
+					</button>
+					<button
+						onClick={enterWebAudioMode}
+						className='px-5 py-3 bg-white/10 hover:bg-white/15 text-white rounded-2xl font-bold text-sm transition-all'>
+						Use browser audio instead
 					</button>
 
 					{joinError && (
@@ -583,7 +952,15 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						<p className='text-[10px] font-black text-discord uppercase tracking-widest mb-1'>Status</p>
 						<div className='text-sm font-bold text-white flex items-center gap-2'>
 							<div className='w-2 h-2 bg-green-500 rounded-full animate-pulse' />
-							<span>{connected ? "Live Sync" : "Reconnecting..."}</span>
+							<span>
+								{webAudioMode ?
+									webAudioConnected ?
+										"Browser audio connected"
+									:	"Browser audio ready"
+								: connected ?
+									"Live Sync"
+								:	"Reconnecting..."}
+							</span>
 						</div>
 					</div>
 				</div>
@@ -610,7 +987,19 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								className='px-6 py-4 bg-discord hover:brightness-110 text-white rounded-2xl font-bold text-sm transition-all shadow-glow'>
 								Search
 							</button>
+							<button
+								onClick={toggleWebAudioMode}
+								aria-pressed={webAudioMode}
+								className={`px-4 py-4 rounded-2xl font-bold text-xs transition-all ${webAudioMode ? "bg-green-500/20 text-green-300 border border-green-400/30" : "bg-white/5 text-zinc-300 border border-white/10 hover:bg-white/10"}`}>
+								{webAudioMode ? "Browser audio" : "Discord voice"}
+							</button>
 						</div>
+						{webAudioMode && (
+							<div className='-mt-6 flex flex-wrap items-center gap-2 text-xs'>
+								<span className='text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
+								{webAudioError && <span className='text-vibrant-pink'>{webAudioError}</span>}
+							</div>
+						)}
 
 						{/* Results or Queue */}
 						{searchResults.length > 0 ?
@@ -629,7 +1018,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 											key={idx}
 											className='group flex items-center gap-3 md:gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5'>
 											<img
-												src={proxyImage(track.thumbnail)}
+												src={proxyImage(track.thumbnail ?? undefined)}
 												alt={track.title}
 												className='w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover'
 											/>
@@ -644,7 +1033,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 													title='play'
 													onClick={(e) => {
 														e.stopPropagation();
-														sendCommand("play", { trackUrl: track.url });
+														if (webAudioMode) void playOnWeb(track.url || track.title);
+														else sendCommand("play", { trackUrl: track.url });
 													}}
 													className='p-2 bg-discord rounded-lg text-white transition-all transform scale-90 hover:scale-100'>
 													<Play className='w-3.5 h-3.5 md:w-4 md:h-4 fill-current' />
@@ -652,13 +1042,15 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 												<button
 													onClick={(e) => {
 														e.stopPropagation();
-														sendCommand("Playnext", {
-															trackUrl: track.url,
-															TrackPosition: 1,
-														});
+														if (webAudioMode) void playOnWeb(track.url || track.title);
+														else
+															sendCommand("Playnext", {
+																trackUrl: track.url,
+																TrackPosition: 1,
+															});
 													}}
 													className='p-2 bg-white/10 rounded-lg text-white hover:bg-white/20 transition-all text-[9px] md:text-[10px] font-black uppercase tracking-widest px-2 md:px-3'>
-													Next
+													{webAudioMode ? "Queue" : "Next"}
 												</button>
 											</div>
 										</div>
@@ -678,10 +1070,13 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 												<div
 													key={idx}
 													className='glass p-4 rounded-3xl flex items-center gap-4 hover:bg-white/5 transition-all cursor-pointer group'
-													onClick={() => sendCommand("play", { trackUrl: track.url })}>
+													onClick={() => {
+														if (webAudioMode) void playOnWeb(track.url || track.title);
+														else sendCommand("play", { trackUrl: track.url });
+													}}>
 													<div className='relative w-16 h-16 shrink-0'>
 														<img
-															src={proxyImage(track.thumbnail)}
+															src={proxyImage(track.thumbnail ?? undefined)}
 															alt={track.title}
 															className='w-full h-full rounded-2xl object-cover'
 														/>
@@ -717,7 +1112,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 														{idx + 1}
 													</span>
 													<img
-														src={proxyImage(track.thumbnail)}
+														src={proxyImage(track.thumbnail ?? undefined)}
 														alt={track.title}
 														className='w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border border-white/5 shadow-lg'
 													/>
@@ -769,7 +1164,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				onClick={() => setIsPlayerOpen(true)}>
 				<div className='relative w-12 h-12 shrink-0'>
 					<img
-						src={proxyImage(stats?.track?.thumbnail)}
+						src={proxyImage(stats?.track?.thumbnail ?? undefined)}
 						alt=''
 						className='w-full h-full rounded-xl object-cover'
 					/>
