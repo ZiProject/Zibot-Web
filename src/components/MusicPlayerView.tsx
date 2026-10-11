@@ -79,14 +79,14 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [voiceChannel, setVoiceChannel] = useState<{ channelName: string; guildName: string } | null>(null);
 	const [isJoining, setIsJoining] = useState(false);
 	const [joinError, setJoinError] = useState<string | null>(null);
-	const [webAudioMode, setWebAudioMode] = useState(false);
+	const [webAudioMode, setWebAudioMode] = useState(true);
 	const [webStreamActive, setWebStreamActive] = useState(false);
 	const [webAudioConnected, setWebAudioConnected] = useState(false);
 	const [webAudioStatus, setWebAudioStatus] = useState("");
 	const [webAudioError, setWebAudioError] = useState<string | null>(null);
 	const webAudioClient = useRef<WebAudioClient | null>(null);
 	const webStreamActiveRef = useRef(false);
-	const webAudioModeRef = useRef(false);
+	const webAudioModeRef = useRef(true);
 
 	// Thêm hằng số này bên ngoài Component hoặc trong component
 	const SILENT_SOUND_URL =
@@ -404,6 +404,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	useEffect(() => {
+		if (webAudioModeRef.current) {
+			setConnected(false);
+			setAuthenticated(false);
+			return;
+		}
+
 		if (!token) {
 			setError("Please login to access the music player.");
 			return;
@@ -496,7 +502,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			socket?.close();
 		};
-	}, [wsUrl, token]);
+	}, [wsUrl, token, webAudioMode]);
 
 	// Fetch lyrics when track changes
 	useEffect(() => {
