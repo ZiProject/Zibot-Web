@@ -384,7 +384,10 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	);
 
 	const handleJoinVoice = async () => {
-		if (!token) return;
+		if (!token) {
+			setJoinError("Please log in before connecting to a voice channel.");
+			return;
+		}
 		setIsJoining(true);
 		setJoinError(null);
 		try {
@@ -395,9 +398,19 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					"Content-Type": "application/json",
 					"ngrok-skip-browser-warning": "true",
 				},
+				body: JSON.stringify({}),
 			});
 
-			const data = await res.json();
+			const responseText = await res.text();
+			let data: { error?: string } = {};
+			if (responseText) {
+				try {
+					data = JSON.parse(responseText);
+				} catch {
+					if (!res.ok) throw new Error(responseText);
+					throw new Error("The server returned an invalid response while connecting to voice.");
+				}
+			}
 			if (!res.ok) {
 				throw new Error(data.error || "Failed to join voice channel");
 			}
