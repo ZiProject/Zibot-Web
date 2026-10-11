@@ -20,8 +20,10 @@ import {
 	LockKeyhole,
 	Activity,
 	Trash2,
-	MoreVertical,
 	Baseline,
+	LoaderCircle,
+	CircleAlert,
+	X,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { BotInfo } from "../services/discordActivity";
@@ -34,6 +36,8 @@ interface Track {
 	author: string | null;
 	isLive?: boolean;
 }
+
+type SearchState = "idle" | "loading" | "success" | "empty" | "error";
 
 interface PlayerStats {
 	event: string;
@@ -140,7 +144,13 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	}, [stats?.timestamp, stats?.track?.duration]);
 	const [volume, setVolume] = useState(50);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [searchResults, setSearchResults] = useState<any[]>([]);
+	const [searchResults, setSearchResults] = useState<Track[]>([]);
+	const [searchState, setSearchState] = useState<SearchState>("idle");
+	const [searchError, setSearchError] = useState<string | null>(null);
+	const latestSearchId = useRef(0);
+	const searchInputRef = useRef<HTMLInputElement>(null);
+	const queueSectionRef = useRef<HTMLDivElement>(null);
+	const [activeTrackAction, setActiveTrackAction] = useState<string | null>(null);
 	const [lyrics, setLyrics] = useState<string | null>(null);
 	const [showLyrics, setShowLyrics] = useState(false);
 	const [isPlayerOpen, setIsPlayerOpen] = useState(false);
@@ -539,7 +549,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		navigator.mediaSession.metadata = new MediaMetadata({
 			title: track.title,
 			artist: track.author || "Unknown artist",
-			album: "Ziji Melody",
+			album: "Melody",
 			artwork: [
 				{
 					src: proxyImage(
@@ -615,18 +625,63 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		}
 	}, [stats?.track, stats?.paused, stats?.timestamp]);
 	const handleSearch = async () => {
-		if (!searchQuery) return;
+		const query = searchQuery.trim();
+		if (!query || searchState === "loading") return;
+		const searchId = ++latestSearchId.current;
+		setSearchState("loading");
+		setSearchError(null);
+		setSearchResults([]);
 		try {
-			const res = await fetch(`${baseUrl}/music/search?q=${encodeURIComponent(searchQuery)}`, {
+			const res = await fetch(`${baseUrl}/music/search?q=${encodeURIComponent(query)}`, {
 				headers: {
 					Authorization: `Bearer ${token}`,
 					"ngrok-skip-browser-warning": "true",
 				},
 			});
+			if (!res.ok) throw new Error(`Search failed (${res.status})`);
 			const data = await res.json();
-			setSearchResults(data.results || []);
+			if (searchId !== latestSearchId.current) return;
+			if (!Array.isArray(data.results)) throw new Error("The search service returned an invalid response.");
+			const results = data.results as Track[];
+			setSearchResults(results);
+			setSearchState(results.length > 0 ? "success" : "empty");
 		} catch (err) {
-			console.error(err);
+			if (searchId !== latestSearchId.current) return;
+			const message = err instanceof Error ? err.message : "Could not search for music.";
+			console.error("Music search failed:", err);
+			setSearchError(message);
+			setSearchState("error");
+		}
+	};
+
+	const clearSearch = () => {
+		latestSearchId.current += 1;
+		setSearchQuery("");
+		setSearchResults([]);
+		setSearchError(null);
+		setSearchState("idle");
+	};
+
+	const handleTrackAction = async (track: Track, queueNext = false) => {
+		const actionId = track.url || track.title;
+		setActiveTrackAction(actionId);
+		try {
+			if (webAudioMode) {
+				if (queueNext) return;
+				await playOnWeb(track.url || track.title);
+			} else {
+				sendCommand(queueNext ? "Playnext" : "play", {
+					trackUrl: track.url,
+					...(queueNext ? { TrackPosition: 1 } : {}),
+				});
+			}
+		} finally {
+			window.setTimeout(
+				() => {
+					setActiveTrackAction((current) => (current === actionId ? null : current));
+				},
+				webAudioMode ? 0 : 500,
+			);
 		}
 	};
 
@@ -778,7 +833,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				<div className='h-14 bg-black/60 backdrop-blur-md border-t border-white/5 flex items-center justify-between px-3 shrink-0 gap-3'>
 					{/* Title and artist */}
 					<div className='flex-grow min-w-0'>
-						<div className='font-bold text-xs truncate text-white'>{stats?.track?.title || "Ziji Music Engine"}</div>
+						<div className='font-bold text-xs truncate text-white'>{stats?.track?.title || "Music Engine"}</div>
 						<div className='text-[9px] font-bold text-zinc-500 uppercase truncate'>{stats?.track?.author || "Standby"}</div>
 					</div>
 
@@ -818,13 +873,17 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								value={searchQuery}
 								onChange={(event) => setSearchQuery(event.target.value)}
 								placeholder='Search music'
-								className='min-w-0 flex-1 rounded-lg bg-white/10 px-3 py-2 text-xs text-white outline-none'
+								aria-label='Search music'
+								className='cyber-input min-w-0 flex-1 rounded-lg px-3 py-2 text-xs outline-none'
 							/>
 							<button
 								type='submit'
-								className='rounded-lg bg-discord px-3 text-white'
-								title='Search'>
-								<Search className='h-4 w-4' />
+								disabled={!searchQuery.trim() || searchState === "loading"}
+								className='cyber-action rounded-lg px-3 text-white disabled:cursor-not-allowed disabled:opacity-40'
+								title={searchState === "loading" ? "Searching" : "Search"}>
+								{searchState === "loading" ?
+									<LoaderCircle className='h-4 w-4 animate-spin' />
+								:	<Search className='h-4 w-4' />}
 							</button>
 							<button
 								type='button'
@@ -836,11 +895,18 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						{searchResults.slice(0, 3).map((track, index) => (
 							<button
 								key={`${track.url || track.title}-${index}`}
-								onClick={() => void playOnWeb(track.url || track.title)}
-								className='block w-full truncate rounded-lg bg-white/5 px-3 py-2 text-left text-xs text-white'>
-								{track.title}
+								onClick={() => void handleTrackAction(track)}
+								disabled={activeTrackAction === (track.url || track.title)}
+								className='cyber-row flex w-full items-center gap-2 truncate rounded-lg px-3 py-2 text-left text-xs text-white disabled:opacity-60'>
+								{activeTrackAction === (track.url || track.title) ?
+									<LoaderCircle className='h-3.5 w-3.5 shrink-0 animate-spin text-cyan-200' />
+								:	<Play className='h-3.5 w-3.5 shrink-0 text-lime-300' />}
+								<span className='truncate'>{track.title}</span>
 							</button>
 						))}
+						{searchState === "loading" && <p className='px-1 font-mono text-[10px] text-cyan-200'>Searching the network...</p>}
+						{searchState === "empty" && <p className='px-1 text-[10px] text-zinc-400'>No tracks found. Try another search.</p>}
+						{searchState === "error" && <p className='px-1 text-[10px] text-rose-300'>{searchError}</p>}
 						{webAudioError && <p className='px-1 text-[10px] text-vibrant-pink'>{webAudioError}</p>}
 					</div>
 				)}
@@ -925,28 +991,47 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	}
 
 	return (
-		<div className='fixed inset-0 top-16 bg-[#09090b] flex overflow-hidden select-none'>
+		<div className='cyber-player fixed inset-0 top-16 flex overflow-hidden select-none'>
 			{/* Background Animated Ambient Blobs */}
-			<div className='absolute top-10 left-1/3 w-80 h-80 bg-discord/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-5000'></div>
-			<div className='absolute bottom-10 right-1/4 w-80 h-80 bg-vibrant-pink/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-7000'></div>
+			<div className='pointer-events-none absolute left-1/3 top-10 h-80 w-80 rounded-full bg-cyan-400/10 blur-[120px]'></div>
+			<div className='pointer-events-none absolute bottom-10 right-1/4 h-80 w-80 rounded-full bg-fuchsia-500/10 blur-[120px]'></div>
 			{/* Sidebar - Desktop Only */}
-			<div className='w-64 border-r border-white/5 flex flex-col p-6 gap-8 hidden lg:flex shrink-0'>
+			<div className='relative z-10 hidden w-64 shrink-0 flex-col gap-8 border-r border-white/10 p-6 lg:flex'>
 				<div className='flex items-center gap-3'>
-					<div className='w-10 h-10 bg-discord rounded-xl flex items-center justify-center shadow-glow'>
-						<Music className='w-6 h-6 text-white' />
+					<div className='flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/40 bg-cyan-300/10 shadow-[0_0_24px_rgba(34,211,238,0.2)]'>
+						<Music className='h-5 w-5 text-cyan-200' />
 					</div>
-					<h2 className='font-black text-2xl tracking-tighter'>Melody</h2>
+					<div>
+						<h2 className='font-black text-xl tracking-[0.18em] text-white'>
+							PLAYER<span className='text-cyan-300'>//</span>FM
+						</h2>
+						<p className='text-[9px] font-bold uppercase tracking-[0.24em] text-zinc-500'>Night City audio</p>
+					</div>
 				</div>
 
 				<nav className='space-y-1'>
 					{[
-						{ icon: LayoutGrid, label: "Home", active: !searchQuery },
-						{ icon: Search, label: "Search", active: !!searchQuery },
-						{ icon: ListMusic, label: "Your Library" },
+						{ icon: LayoutGrid, label: "Home", active: searchState === "idle" && !searchQuery, onClick: clearSearch },
+						{
+							icon: Search,
+							label: "Search",
+							active: Boolean(searchQuery) || searchState !== "idle",
+							onClick: () => searchInputRef.current?.focus(),
+						},
+						{
+							icon: ListMusic,
+							label: "Your Library",
+							active: false,
+							onClick: () => {
+								if (searchState !== "idle") clearSearch();
+								window.setTimeout(() => queueSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+							},
+						},
 					].map((item, idx) => (
 						<button
 							key={idx}
-							className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${item.active ? "bg-white/5 text-white font-bold" : "text-zinc-500 hover:text-white"}`}>
+							onClick={item.onClick}
+							className={`w-full flex items-center gap-4 rounded-xl border px-4 py-3 transition-all ${item.active ? "border-cyan-300/20 bg-cyan-300/[0.08] font-bold text-cyan-100" : "border-transparent text-zinc-500 hover:bg-white/[0.03] hover:text-white"}`}>
 							<item.icon className='w-5 h-5' />
 							<span className='text-sm'>{item.label}</span>
 						</button>
@@ -954,10 +1039,10 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				</nav>
 
 				<div className='mt-auto'>
-					<div className='p-4 glass rounded-2xl bg-discord/10 border border-discord/20'>
-						<p className='text-[10px] font-black text-discord uppercase tracking-widest mb-1'>Status</p>
+					<div className='cyber-card rounded-2xl p-4'>
+						<p className='mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-300'>System status</p>
 						<div className='text-sm font-bold text-white flex items-center gap-2'>
-							<div className='w-2 h-2 bg-green-500 rounded-full animate-pulse' />
+							<div className='h-2 w-2 rounded-full bg-lime-300 shadow-[0_0_12px_rgba(190,242,100,0.8)] animate-pulse' />
 							<span>
 								{webAudioMode ?
 									webAudioConnected ?
@@ -973,56 +1058,155 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			</div>
 
 			{/* Main Content Area */}
-			<div className='flex-grow flex flex-col min-w-0 pb-20 md:pb-0'>
-				<div className='p-4 md:p-8 flex-grow overflow-y-auto custom-scrollbar'>
-					<div className='max-w-4xl mx-auto space-y-8 md:space-y-10'>
+			<div className='relative z-10 flex min-w-0 flex-grow flex-col pb-20 md:pb-0'>
+				<div className='custom-scrollbar flex-grow overflow-y-auto p-4 md:p-8'>
+					<div className='mx-auto max-w-4xl space-y-8 md:space-y-10'>
 						{/* Search Bar */}
-						<div className='flex items-center gap-4 sticky top-0 bg-[#09090b] py-2 z-20'>
+						<form
+							className='sticky top-0 z-20 flex items-center gap-3 bg-[#080b10]/90 py-3 backdrop-blur-xl'
+							onSubmit={(event) => {
+								event.preventDefault();
+								void handleSearch();
+							}}>
 							<div className='relative flex-grow'>
-								<Search className='absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500' />
+								<Search className='absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-300/70' />
 								<input
+									ref={searchInputRef}
 									placeholder='Search songs, artists, albums...'
-									className='w-full bg-white/5 border border-white/10 rounded-2xl ps-12 pe-4 py-4 text-sm outline-none focus:border-discord/30 focus:bg-white/[0.08] transition-all'
+									aria-label='Search songs, artists, albums'
+									className='cyber-input w-full rounded-xl py-4 ps-12 pe-4 text-sm outline-none transition-all'
 									value={searchQuery}
-									onChange={(e) => setSearchQuery(e.target.value)}
-									onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+									onChange={(e) => {
+										setSearchQuery(e.target.value);
+										latestSearchId.current += 1;
+										setSearchResults([]);
+										if (searchState !== "idle") {
+											setSearchState("idle");
+											setSearchError(null);
+										}
+									}}
 								/>
+								{searchQuery && (
+									<button
+										type='button'
+										onClick={clearSearch}
+										aria-label='Clear search'
+										className='absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white'>
+										<X className='h-4 w-4' />
+									</button>
+								)}
 							</div>
 							<button
-								onClick={handleSearch}
-								className='px-6 py-4 bg-discord hover:brightness-110 text-white rounded-2xl font-bold text-sm transition-all shadow-glow'>
-								Search
+								type='submit'
+								disabled={!searchQuery.trim() || searchState === "loading"}
+								aria-label={searchState === "loading" ? "Searching" : "Search"}
+								className='cyber-action flex min-w-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-4 text-sm font-black uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-45 sm:min-w-[108px] sm:px-5'>
+								{searchState === "loading" ?
+									<>
+										<LoaderCircle className='h-4 w-4 animate-spin' />
+										<span className='hidden sm:inline'>Searching...</span>
+									</>
+								:	<>
+										<Search className='h-4 w-4' />
+										<span className='hidden sm:inline'>Search</span>
+									</>
+								}
 							</button>
 							<button
+								type='button'
 								onClick={toggleWebAudioMode}
 								aria-pressed={webAudioMode}
-								className={`px-4 py-4 rounded-2xl font-bold text-xs transition-all ${webAudioMode ? "bg-green-500/20 text-green-300 border border-green-400/30" : "bg-white/5 text-zinc-300 border border-white/10 hover:bg-white/10"}`}>
+								className={`shrink-0 rounded-xl border px-2.5 py-4 text-[10px] font-bold transition-all sm:px-4 sm:text-xs ${webAudioMode ? "border-lime-300/30 bg-lime-300/10 text-lime-200" : "border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/10"}`}>
 								{webAudioMode ? "Browser audio" : "Discord voice"}
 							</button>
-						</div>
+						</form>
 						{webAudioMode && (
-							<div className='-mt-6 flex flex-wrap items-center gap-2 text-xs'>
-								<span className='text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
-								{webAudioError && <span className='text-vibrant-pink'>{webAudioError}</span>}
+							<div
+								className='-mt-6 flex flex-wrap items-center gap-2 text-xs'
+								role='status'
+								aria-live='polite'>
+								<span className='font-mono text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
+								{webAudioError && <span className='text-rose-300'>{webAudioError}</span>}
 							</div>
 						)}
 
 						{/* Results or Queue */}
-						{searchResults.length > 0 ?
+						{searchState === "loading" ?
+							<div
+								className='cyber-card space-y-4 rounded-2xl p-5 md:p-6'
+								role='status'
+								aria-live='polite'>
+								<div className='flex items-center gap-3 text-cyan-100'>
+									<LoaderCircle className='h-5 w-5 animate-spin text-cyan-300' />
+									<div>
+										<h3 className='font-bold'>Searching the network...</h3>
+										<p className='mt-0.5 truncate text-xs text-zinc-500'>Looking for “{searchQuery.trim()}”</p>
+									</div>
+								</div>
+								{[0, 1, 2].map((item) => (
+									<div
+										key={item}
+										className='flex animate-pulse items-center gap-4 rounded-xl bg-white/[0.025] p-3'>
+										<div className='h-12 w-12 shrink-0 rounded-lg bg-white/[0.07]' />
+										<div className='min-w-0 flex-1 space-y-2'>
+											<div className='h-3 w-2/3 rounded bg-white/[0.08]' />
+											<div className='h-2 w-1/3 rounded bg-white/[0.05]' />
+										</div>
+									</div>
+								))}
+							</div>
+						: searchState === "error" ?
+							<div
+								className='cyber-card flex items-start gap-4 rounded-2xl p-5 md:p-6'
+								role='alert'>
+								<CircleAlert className='mt-0.5 h-5 w-5 shrink-0 text-rose-300' />
+								<div className='min-w-0 flex-1'>
+									<h3 className='font-bold text-white'>Search failed</h3>
+									<p className='mt-1 break-words text-sm text-zinc-400'>{searchError}</p>
+									<button
+										onClick={() => void handleSearch()}
+										className='mt-4 rounded-lg border border-cyan-200/20 bg-cyan-200/[0.08] px-3 py-2 text-xs font-bold text-cyan-100 transition-colors hover:bg-cyan-200/[0.15]'>
+										Try again
+									</button>
+								</div>
+							</div>
+						: searchState === "empty" ?
+							<div
+								className='cyber-card flex flex-col items-center rounded-2xl px-5 py-12 text-center'
+								role='status'>
+								<div className='mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-200/15 bg-cyan-200/[0.06]'>
+									<Search className='h-6 w-6 text-cyan-200' />
+								</div>
+								<h3 className='text-lg font-black text-white'>No tracks found</h3>
+								<p className='mt-2 max-w-sm text-sm text-zinc-400'>
+									Nothing matched “{searchQuery.trim()}”. Try a different title, artist, or link.
+								</p>
+								<button
+									onClick={() => searchInputRef.current?.focus()}
+									className='mt-5 rounded-lg border border-cyan-200/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-cyan-100 transition-colors hover:bg-cyan-200/[0.08]'>
+									Edit search
+								</button>
+							</div>
+						: searchResults.length > 0 ?
 							<div className='space-y-6'>
 								<div className='flex items-center justify-between'>
-									<h3 className='font-black text-3xl tracking-tight'>Search Results</h3>
+									<div>
+										<h3 className='font-black text-2xl tracking-tight md:text-3xl'>Search Results</h3>
+										<p className='mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500'>
+											{searchResults.length} {searchResults.length === 1 ? "track" : "tracks"} found
+										</p>
+									</div>
 									<button
-										onClick={() => setSearchResults([])}
-										className='text-xs font-bold text-zinc-500 hover:text-white uppercase transition-colors'>
+										onClick={clearSearch}
+										className='rounded-lg px-3 py-2 text-xs font-bold uppercase text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-white'>
 										Clear
 									</button>
 								</div>
 								<div className='grid gap-2'>
 									{searchResults.map((track, idx) => (
 										<div
-											key={idx}
-											className='group flex items-center gap-3 md:gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5'>
+											key={`${track.url || track.title}-${idx}`}
+											className='cyber-row group flex items-center gap-3 rounded-xl p-3 transition-all md:gap-4'>
 											<img
 												src={proxyImage(track.thumbnail ?? undefined)}
 												alt={track.title}
@@ -1036,28 +1220,24 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 											</div>
 											<div className='flex gap-1 md:gap-2'>
 												<button
-													title='play'
-													onClick={(e) => {
-														e.stopPropagation();
-														if (webAudioMode) void playOnWeb(track.url || track.title);
-														else sendCommand("play", { trackUrl: track.url });
-													}}
-													className='p-2 bg-discord rounded-lg text-white transition-all transform scale-90 hover:scale-100'>
-													<Play className='w-3.5 h-3.5 md:w-4 md:h-4 fill-current' />
+													type='button'
+													title='Play track'
+													aria-label={`Play ${track.title}`}
+													disabled={activeTrackAction === (track.url || track.title)}
+													onClick={() => void handleTrackAction(track)}
+													className='cyber-action flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60'>
+													{activeTrackAction === (track.url || track.title) ?
+														<LoaderCircle className='h-4 w-4 animate-spin' />
+													:	<Play className='h-4 w-4 fill-current' />}
 												</button>
-												<button
-													onClick={(e) => {
-														e.stopPropagation();
-														if (webAudioMode) void playOnWeb(track.url || track.title);
-														else
-															sendCommand("Playnext", {
-																trackUrl: track.url,
-																TrackPosition: 1,
-															});
-													}}
-													className='p-2 bg-white/10 rounded-lg text-white hover:bg-white/20 transition-all text-[9px] md:text-[10px] font-black uppercase tracking-widest px-2 md:px-3'>
-													{webAudioMode ? "Queue" : "Next"}
-												</button>
+												{!webAudioMode && (
+													<button
+														type='button'
+														onClick={() => void handleTrackAction(track, true)}
+														className='rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-cyan-200/20 hover:bg-cyan-200/[0.06] active:scale-95'>
+														Next
+													</button>
+												)}
 											</div>
 										</div>
 									))}
@@ -1075,7 +1255,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 											{stats.related.slice(0, 4).map((track, idx) => (
 												<div
 													key={idx}
-													className='glass p-4 rounded-3xl flex items-center gap-4 hover:bg-white/5 transition-all cursor-pointer group'
+													className='cyber-card flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition-all group'
 													onClick={() => {
 														if (webAudioMode) void playOnWeb(track.url || track.title);
 														else sendCommand("play", { trackUrl: track.url });
@@ -1084,7 +1264,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 														<img
 															src={proxyImage(track.thumbnail ?? undefined)}
 															alt={track.title}
-															className='w-full h-full rounded-2xl object-cover'
+															className='h-full w-full rounded-xl object-cover'
 														/>
 														<div className='absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl'>
 															<Play className='w-6 h-6 text-white fill-current' />
@@ -1100,7 +1280,9 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 									</div>
 								)}
 
-								<div className='space-y-6'>
+								<div
+									ref={queueSectionRef}
+									className='scroll-mt-6 space-y-6'>
 									<div className='flex items-center justify-between'>
 										<h3 className='font-black text-2xl md:text-3xl tracking-tight'>Up Next</h3>
 										<div className='flex gap-4 text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-widest'>
@@ -1113,7 +1295,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 											stats.queue.map((track, idx) => (
 												<div
 													key={idx}
-													className='group flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-3xl hover:bg-white/[0.03] transition-all cursor-pointer border border-transparent hover:border-white/5'>
+													className='cyber-row group flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-all md:gap-4 md:p-4'>
 													<span className='w-4 md:w-6 text-center font-bold text-xs md:text-sm text-zinc-600 group-hover:text-discord transition-colors'>
 														{idx + 1}
 													</span>
@@ -1134,19 +1316,29 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 														</span>
 														<button
 															title='DelTrack'
+															aria-label={`Remove ${track.title} from queue`}
+															disabled={webAudioMode}
 															onClick={(e) => {
 																e.stopPropagation();
 																sendCommand("DelTrack", {
 																	TrackPosition: idx + 1,
 																});
 															}}
-															className='md:hidden group-hover:flex flex p-2 text-zinc-500 hover:text-red-500 transition-colors'>
+															className='flex p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:hidden md:group-hover:flex'>
 															<Trash2 className='w-3.5 h-3.5 md:w-4 md:h-4' />
 														</button>
 														<button
-															title='none'
-															className='hidden md:group-hover:flex p-2 text-zinc-500 hover:text-white transition-colors'>
-															<MoreVertical className='w-4 h-4' />
+															title={webAudioMode ? "Queue removal is not supported in browser audio" : "Remove from queue"}
+															aria-label={`Remove ${track.title} from queue`}
+															disabled={webAudioMode}
+															onClick={(e) => {
+																e.stopPropagation();
+																sendCommand("DelTrack", {
+																	TrackPosition: idx + 1,
+																});
+															}}
+															className='hidden p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:group-hover:flex'>
+															<Trash2 className='h-4 w-4' />
 														</button>
 													</div>
 												</div>
@@ -1166,19 +1358,21 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			{/* Mini Player - Mobile Only */}
 			<div
-				className='md:hidden fixed bottom-0 left-0 right-0 glass-dark border-t border-white/5 p-3 flex items-center gap-3 z-40'
+				className='cyber-mini fixed bottom-0 left-0 right-0 z-40 flex items-center gap-3 border-t p-3 md:hidden'
 				onClick={() => setIsPlayerOpen(true)}>
 				<div className='relative w-12 h-12 shrink-0'>
 					<img
 						src={proxyImage(stats?.track?.thumbnail ?? undefined)}
 						alt=''
-						className='w-full h-full rounded-xl object-cover'
+						className='h-full w-full rounded-lg border border-cyan-200/20 object-cover'
 					/>
-					<div className='absolute inset-0 bg-discord opacity-20 blur-xl'></div>
+					<div className='absolute inset-0 bg-cyan-300/20 blur-xl'></div>
 				</div>
 				<div className='flex-grow min-w-0'>
 					<h4 className='font-bold text-sm truncate'>{stats?.track?.title || "Not Playing"}</h4>
-					<p className='text-[10px] font-bold text-zinc-500 uppercase truncate'>{stats?.track?.author || "Melody Engine"}</p>
+					<p className='truncate text-[10px] font-bold uppercase text-cyan-100/50'>
+						{stats?.track?.author || "Night City audio"}
+					</p>
 				</div>
 				<div className='flex items-center gap-1'>
 					<button
@@ -1186,7 +1380,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							e.stopPropagation();
 							sendCommand("pause");
 						}}
-						className='p-3 bg-white/5 rounded-xl text-white'>
+						className='cyber-control rounded-xl p-3 text-cyan-100'>
 						{stats?.paused ?
 							<Play className='w-4 h-4 fill-current' />
 						:	<Pause className='w-4 h-4 fill-current' />}
@@ -1197,26 +1391,25 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							e.stopPropagation();
 							sendCommand("skip");
 						}}
-						className='p-3 text-zinc-400'>
+						className='cyber-skip p-3 text-zinc-400'>
 						<SkipForward className='w-4 h-4 fill-current' />
 					</button>
 				</div>
 				<div
-					className='absolute top-0 left-0 h-[2px] bg-discord shadow-glow'
+					className='cyber-progress-fill absolute left-0 top-0 h-[2px]'
 					style={{ width: `${progress}%` }}
 				/>
 			</div>
 
 			{/* Now Playing Panel */}
 			<div
-				className={`shrink-0 border-l border-white/5 flex flex-col transition-all duration-500 ease-out z-50 overflow-hidden
-  					  ${isPlayerOpen ? "fixed inset-0 h-dvh bg-[#09090b]" : "hidden md:flex md:relative md:w-[clamp(320px,28vw,450px)]"} bg-gradient-to-b from-white/[0.02] to-transparent`}>
-				<div className='p-6 md:p-8 flex flex-col h-full min-h-0 gap-6 md:gap-8 overflow-y-auto'>
+				className={`cyber-now-playing relative z-10 flex shrink-0 flex-col overflow-hidden border-l border-cyan-300/10 transition-all duration-500 ease-out ${isPlayerOpen ? "fixed inset-0 h-dvh" : "hidden md:relative md:flex md:w-[clamp(320px,28vw,450px)]"}`}>
+				<div className='cyber-now-playing-content flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-6 md:gap-8 md:p-8'>
 					<div className='flex items-start justify-between shrink-0'>
 						<button
 							onClick={() => (isPlayerOpen ? setIsPlayerOpen(false) : setShowLyrics(!showLyrics))}
 							className={`p-3 rounded-xl transition-all ${
-								showLyrics && !isPlayerOpen ? "bg-discord text-white" : "bg-white/5 text-zinc-500 hover:text-white"
+								showLyrics && !isPlayerOpen ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.04] text-zinc-500 hover:text-cyan-200"
 							}`}>
 							{isPlayerOpen ?
 								<SkipBack className='w-5 h-5 -rotate-90' />
@@ -1225,11 +1418,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 						{/* Center */}
 						<div className='flex flex-col items-center flex-1 px-4'>
-							<p className='text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400'>Now Playing</p>
+							<p className='text-[10px] font-black uppercase tracking-[0.3em] text-cyan-200'>Now Playing</p>
+							<p className='mt-1 font-mono text-[8px] uppercase tracking-[0.22em] text-zinc-600'>// audio feed active</p>
 
 							{voiceChannel && (
-								<div className='mt-1 flex items-center gap-1 text-[11px] font-semibold text-green-400'>
-									<span className='w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0' />
+								<div className='mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-lime-300'>
+									<span className='h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-lime-300 shadow-[0_0_10px_rgba(190,242,100,0.8)]' />
 									<span className='truncate max-w-[220px]'>{voiceChannel.channelName}</span>
 								</div>
 							)}
@@ -1238,7 +1432,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						<button
 							title='showLyrics'
 							onClick={() => setShowLyrics(!showLyrics)}
-							className={`p-3 bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-all md:block ${
+							className={`rounded-xl bg-white/[0.04] p-3 text-zinc-500 transition-all hover:text-cyan-200 md:block ${
 								isPlayerOpen ? "block" : "hidden"
 							}`}>
 							<LayoutGrid className='w-5 h-5' />
@@ -1251,8 +1445,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								initial={{ opacity: 0, y: 20 }}
 								animate={{ opacity: 1, y: 0 }}
 								exit={{ opacity: 0, y: -20 }}
-								className='flex-grow glass rounded-[2.5rem] p-8 overflow-y-auto custom-scrollbar'>
-								<p className='text-zinc-400 font-bold uppercase text-[10px] tracking-widest mb-6'>Lyrics</p>
+								className='cyber-card flex-grow overflow-y-auto rounded-2xl p-8 custom-scrollbar'>
+								<p className='mb-6 text-[10px] font-bold uppercase tracking-widest text-cyan-300'>Lyrics</p>
 								<div className='whitespace-pre-wrap font-bold text-xl leading-relaxed text-zinc-300'>
 									{lyrics || "Searching for lyrics..."}
 								</div>
@@ -1262,8 +1456,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								initial={{ opacity: 0, scale: 0.95 }}
 								animate={{ opacity: 1, scale: 1 }}
 								exit={{ opacity: 0, scale: 0.95 }}
-								className='flex-grow flex flex-col gap-8 justify-center'>
-								<div className='   relative  flex-1   min-h-0  flex items-center justify-center  '>
+								className='cyber-now-playing-cover flex min-h-0 flex-grow flex-col justify-center gap-6'>
+								<div className='cyber-art-frame relative flex min-h-0 flex-1 items-center justify-center'>
 									<img
 										src={proxyImage(
 											stats?.track?.thumbnail ||
@@ -1271,24 +1465,23 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 												"https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop",
 										)}
 										alt='Album Art'
-										className='w-full h-full object-cover rounded-[clamp(1rem,3vw,2.5rem)] border border-white/10 shadow-2xl'
+										className='cyber-artwork h-full w-full rounded-xl object-cover'
 									/>
+									<div className='pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-md border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100 backdrop-blur'>
+										<span className='h-1.5 w-1.5 animate-pulse rounded-full bg-lime-300' />
+										Now transmitting
+									</div>
 								</div>
 
-								<div className='space-y-1 md:space-y-2 text-center px-2'>
-									<div className='overflow-hidden whitespace-nowrap'>
+								<div className='min-w-0 space-y-1 px-2 text-center md:space-y-2'>
+									<div className='w-full min-w-0 overflow-hidden'>
 										<motion.h2
-											className='font-black text-2xl md:text-3xl tracking-tighter inline-block'
-											animate={stats?.track?.title?.length && stats.track.title.length > 25 ? { x: [0, -100, 0] } : {}}
-											transition={{
-												duration: 10,
-												repeat: Infinity,
-												ease: "linear",
-											}}>
-											{stats?.track?.title || "Ziji Music Engine"}
+											className='block max-w-full truncate font-black text-2xl tracking-tight text-white md:text-3xl'
+											title={stats?.track?.title || "Music Engine"}>
+											{stats?.track?.title || "Music Engine"}
 										</motion.h2>
 									</div>
-									<p className='text-xs md:text-sm font-bold text-zinc-500 uppercase tracking-[0.2em]'>
+									<p className='text-xs font-bold uppercase tracking-[0.2em] text-cyan-100/60 md:text-sm'>
 										{stats?.track?.author || "Standby Mode"}
 									</p>
 								</div>
@@ -1296,9 +1489,9 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						}
 					</AnimatePresence>
 
-					<div className='shrink-0 space-y-4 pt-2'>
+					<div className='cyber-now-playing-controls shrink-0 space-y-4 pt-2'>
 						<div className='space-y-3'>
-							<div className='relative h-1 w-full bg-white/5 rounded-full cursor-pointer group'>
+							<div className='cyber-progress-track relative h-1.5 w-full cursor-pointer rounded-full'>
 								<div
 									className='absolute inset-0 z-20 cursor-pointer'
 									onClick={(e) => {
@@ -1313,12 +1506,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 									}}
 								/>
 								<motion.div
-									className='absolute top-0 left-0 h-full bg-gradient-to-r from-discord to-vibrant-pink shadow-glow z-10'
+									className='cyber-progress-fill absolute left-0 top-0 z-10 h-full rounded-full'
 									initial={{ width: 0 }}
 									animate={{ width: `${progress}%` }}
 								/>
 							</div>
-							<div className='flex justify-between text-[10px] font-mono text-zinc-500 font-bold px-1'>
+							<div className='flex justify-between px-1 font-mono text-[10px] font-bold text-zinc-500'>
 								<span>{formatTime(stats?.timestamp || 0)}</span>
 								<span>{formatDisplayDuration(stats?.track?.duration || "0:00")}</span>
 							</div>
@@ -1326,58 +1519,69 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 						<div className='flex items-center justify-center gap-3 md:gap-4 flex-wrap'>
 							{/* Primary Controls Row */}
-							<div className='flex items-center justify-center gap-4 md:gap-6 my-1'>
+							<div className='cyber-now-playing-buttons my-1 flex items-center justify-center gap-4 md:gap-6'>
 								<button
 									onClick={() => sendCommand("Loop")}
-									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.repeatMode !== "off" ? "text-discord" : "text-zinc-600"}`}
+									aria-label='Loop mode'
+									aria-pressed={Boolean(stats?.repeatMode && stats.repeatMode !== "off")}
+									className={`cyber-control rounded-xl p-2.5 transition-colors ${stats?.repeatMode && stats.repeatMode !== "off" ? "text-cyan-200" : "text-zinc-600"}`}
 									title='Loop Mode'>
 									<Repeat className='w-4.5 h-4.5' />
 								</button>
 								<button
 									onClick={() => sendCommand("AutoPlay")}
-									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.autoPlay ? "text-green-500" : "text-zinc-600"}`}
+									aria-label='Toggle autoplay'
+									aria-pressed={Boolean(stats?.autoPlay)}
+									className={`cyber-control rounded-xl p-2.5 transition-colors ${stats?.autoPlay ? "text-lime-300" : "text-zinc-600"}`}
 									title='AutoPlay'>
 									<Baseline className='w-4.5 h-4.5' />
 								</button>{" "}
 								<button
 									title='back'
+									aria-label='Previous track'
 									onClick={() => sendCommand("back")}
-									className='text-zinc-500 hover:text-white transition-colors cursor-pointer'>
+									className='cyber-skip text-zinc-500 transition-colors'>
 									<SkipBack className='w-6 h-6 fill-current' />
 								</button>
 								<button
 									onClick={() => sendCommand("pause")}
-									className='w-16 h-16 bg-discord hover:brightness-110 rounded-3xl flex items-center justify-center shadow-glow text-white transition-transform active:scale-95 cursor-pointer'>
+									aria-label={stats?.paused ? "Play" : "Pause"}
+									className='cyber-play-button flex h-16 w-16 items-center justify-center rounded-2xl text-[#081013] transition-transform active:scale-95'>
 									{stats?.paused ?
 										<Play className='w-6 h-6 fill-current translate-x-0.5' />
 									:	<Pause className='w-6 h-6 fill-current' />}
 								</button>
 								<button
 									title='skip'
+									aria-label='Next track'
 									onClick={() => sendCommand("skip")}
-									className='text-zinc-500 hover:text-white transition-colors cursor-pointer'>
+									className='cyber-skip text-zinc-500 transition-colors'>
 									<SkipForward className='w-6 h-6 fill-current' />
 								</button>
 								<button
 									onClick={() => sendCommand("Lock")}
-									className={`p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors cursor-pointer ${stats?.lockStatus ? "text-vibrant-pink" : "text-zinc-600"}`}
+									aria-label='Lock player'
+									aria-pressed={Boolean(stats?.lockStatus)}
+									className={`cyber-control rounded-xl p-2.5 transition-colors ${stats?.lockStatus ? "text-fuchsia-300" : "text-zinc-600"}`}
 									title='Lock Player'>
 									<LockKeyhole className='w-4.5 h-4.5' />
 								</button>
 								<button
 									onClick={() => sendCommand("Shuffle")}
-									className='p-2.5 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors text-zinc-600 hover:text-white cursor-pointer'
+									aria-label='Shuffle queue'
+									className='cyber-control rounded-xl p-2.5 text-zinc-600 transition-colors hover:text-white'
 									title='Shuffle'>
 									<Shuffle className='w-4.5 h-4.5' />
 								</button>
 							</div>
 						</div>
 
-						<div className='flex items-center gap-4 px-4 bg-white/[0.03] p-4 rounded-2xl border border-white/5'>
-							<Volume2 className='w-4 h-4 text-zinc-500' />
-							<div className='relative flex-grow h-1 bg-white/10 rounded-full cursor-pointer group'>
+						<div className='cyber-volume flex items-center gap-4 rounded-xl border px-4 py-3'>
+							<Volume2 className='h-4 w-4 text-cyan-200/60' />
+							<div className='cyber-progress-track relative h-1 flex-grow cursor-pointer rounded-full'>
 								<input
 									title='setVolume'
+									aria-label='Volume'
 									type='range'
 									min='0'
 									max='100'
@@ -1390,7 +1594,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 									className='absolute inset-0 w-full opacity-0 z-10 cursor-pointer'
 								/>
 								<div
-									className='absolute top-0 left-0 h-full bg-discord rounded-full shadow-glow'
+									className='cyber-progress-fill absolute left-0 top-0 h-full rounded-full'
 									style={{ width: `${volume}%` }}
 								/>
 							</div>

@@ -52,3 +52,190 @@
 .animation-paused {
 	animation-play-state: paused;
 }
+
+.cyber-player {
+	--cyber-cyan: #67e8f9;
+	--cyber-lime: #e6ff45;
+	position: relative;
+	isolation: isolate;
+	background-color: #080b10;
+	background-image:
+		linear-gradient(rgba(103, 232, 249, 0.035) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(103, 232, 249, 0.035) 1px, transparent 1px),
+		radial-gradient(ellipse at 54% 0%, rgba(15, 90, 110, 0.18), transparent 48%);
+	background-size:
+		42px 42px,
+		42px 42px,
+		auto;
+}
+
+.cyber-player::after {
+	position: absolute;
+	z-index: 0;
+	inset: 0;
+	pointer-events: none;
+	background: linear-gradient(115deg, transparent 0 48%, rgba(230, 255, 69, 0.025) 48.1%, transparent 48.3% 100%);
+	content: "";
+}
+
+.cyber-card {
+	border: 1px solid rgba(103, 232, 249, 0.14);
+	background: linear-gradient(135deg, rgba(19, 30, 38, 0.86), rgba(10, 14, 20, 0.84));
+	box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.cyber-input {
+	border: 1px solid rgba(103, 232, 249, 0.16);
+	background: rgba(10, 16, 22, 0.86);
+	color: #f4f7f8;
+}
+
+.cyber-input::placeholder {
+	color: #66747d;
+}
+
+.cyber-input:focus {
+	border-color: rgba(103, 232, 249, 0.62);
+	box-shadow:
+		0 0 0 3px rgba(103, 232, 249, 0.08),
+		0 0 24px rgba(103, 232, 249, 0.08);
+}
+
+.cyber-action {
+	border: 1px solid rgba(230, 255, 69, 0.86);
+	background: #e6ff45;
+	color: #10150b;
+	box-shadow: 0 0 22px rgba(230, 255, 69, 0.13);
+}
+
+.cyber-action:hover {
+	background: #f0ff8d;
+	box-shadow: 0 0 28px rgba(230, 255, 69, 0.26);
+}
+
+.cyber-action:active {
+	transform: scale(0.97);
+}
+
+.cyber-row {
+	border: 1px solid transparent;
+}
+
+.cyber-row:hover {
+	border-color: rgba(103, 232, 249, 0.16);
+	background: rgba(103, 232, 249, 0.045);
+}
+
+.cyber-now-playing {
+	background: linear-gradient(180deg, rgba(13, 20, 27, 0.97), rgba(7, 10, 15, 0.99));
+	box-shadow: -24px 0 60px rgba(0, 0, 0, 0.2);
+}
+
+.cyber-now-playing-content {
+	min-height: 0;
+}
+
+.cyber-now-playing-cover {
+	min-height: 0;
+}
+
+.cyber-now-playing-cover .cyber-art-frame {
+	width: 100%;
+	max-height: min(34vh, 420px);
+}
+
+@media (max-height: 800px) {
+	.cyber-now-playing-content {
+		gap: 16px;
+		padding: 16px;
+	}
+
+	.cyber-now-playing-cover {
+		gap: 12px;
+	}
+
+	.cyber-now-playing-cover .cyber-art-frame {
+		max-height: 25vh;
+	}
+
+	.cyber-now-playing-controls {
+		padding-top: 0.25rem;
+	}
+
+	.cyber-now-playing-buttons {
+		gap: 12px;
+	}
+}
+
+.cyber-mini {
+	border-color: rgba(103, 232, 249, 0.2);
+	background: rgba(7, 12, 17, 0.96);
+	box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.35);
+	backdrop-filter: blur(20px);
+}
+
+.cyber-art-frame {
+	padding: 8px;
+	border: 1px solid rgba(103, 232, 249, 0.22);
+	border-radius: 18px;
+	background: linear-gradient(145deg, rgba(103, 232, 249, 0.12), transparent 35%, rgba(230, 255, 69, 0.08));
+	box-shadow:
+		0 24px 70px rgba(0, 0, 0, 0.45),
+		0 0 40px rgba(34, 211, 238, 0.08);
+}
+
+.cyber-artwork {
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.44);
+}
+
+.cyber-progress-track {
+	background: rgba(148, 163, 184, 0.18);
+}
+
+.cyber-progress-fill {
+	background: linear-gradient(90deg, #67e8f9, #e6ff45);
+	box-shadow: 0 0 12px rgba(103, 232, 249, 0.48);
+}
+
+.cyber-control {
+	border: 1px solid rgba(255, 255, 255, 0.055);
+	background: rgba(255, 255, 255, 0.035);
+}
+
+.cyber-control:hover,
+.cyber-skip:hover {
+	color: var(--cyber-cyan);
+}
+
+.cyber-control:active,
+.cyber-skip:active {
+	transform: scale(0.94);
+}
+
+.cyber-play-button {
+	border: 1px solid rgba(230, 255, 69, 0.95);
+	background: var(--cyber-lime);
+	box-shadow: 0 0 30px rgba(230, 255, 69, 0.2);
+}
+
+.cyber-play-button:hover {
+	background: #f0ff8d;
+	box-shadow: 0 0 42px rgba(230, 255, 69, 0.34);
+}
+
+.cyber-volume {
+	border-color: rgba(103, 232, 249, 0.12);
+	background: rgba(255, 255, 255, 0.025);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cyber-player *,
+	.cyber-player *::before,
+	.cyber-player *::after {
+		scroll-behavior: auto !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
