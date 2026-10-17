@@ -88,8 +88,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [webAudioConnected, setWebAudioConnected] = useState(false);
 	const [webAudioStatus, setWebAudioStatus] = useState("");
 	const [webAudioError, setWebAudioError] = useState<string | null>(null);
+	const [streamTarget, setStreamTarget] = useState<"auto" | "browser">("auto");
 	const webAudioClient = useRef<WebAudioClient | null>(null);
 	const webStreamActiveRef = useRef(false);
+	const webStreamSessionIdRef = useRef<string | null>(null);
+	const webStreamMirrorsVoiceRef = useRef(false);
+	const webStreamSharesDiscordPlayerRef = useRef(false);
 	const webAudioModeRef = useRef(true);
 
 	// Thêm hằng số này bên ngoài Component hoặc trong component
@@ -193,7 +197,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		});
 		client.addEventListener("error", ({ detail }) => {
 			console.error("Web audio stream error:", detail.error);
-			setWebAudioError(detail.error.message);
+			const message = detail.error.message;
+			setWebAudioError(
+				message.includes("PCM configuration") ?
+					"Your browser audio receiver is outdated. Update @ziplayer/client to the Opus Web Audio client."
+				:	message,
+			);
 		});
 		client.addEventListener("close", ({ detail }) => {
 			if (detail.code !== 1000) setWebAudioStatus(`Audio connection closed (${detail.code})`);
@@ -202,7 +211,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		return client;
 	};
 
-	const playOnWeb = async (query: string) => {
+	const playOnWeb = async (query: string, positionMs = 0, mirrorsVoice = false) => {
 		if (!token) {
 			setWebAudioError("Please log in to use browser audio.");
 			return;
@@ -221,14 +230,25 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					"Content-Type": "application/json",
 					"ngrok-skip-browser-warning": "true",
 				},
-				body: JSON.stringify({ query }),
+				body: JSON.stringify({ query, target: streamTarget, ...(positionMs > 0 ? { positionMs } : {}) }),
 			});
 			const result = await response.json();
 			if (!response.ok) throw new Error(result.error || `Playback request failed (${response.status})`);
 			if (!result.sessionId) throw new Error("The audio player did not return a session ID");
+			if (client.sessionId && client.sessionId !== result.sessionId) {
+				throw new Error("The browser listener connected to a different player session");
+			}
+			webStreamSessionIdRef.current = result.sessionId;
+			webStreamMirrorsVoiceRef.current = mirrorsVoice;
+			webStreamSharesDiscordPlayerRef.current = result.target === "discord";
 			enterWebAudioMode();
 			setWebStreamRunning(true);
-			setWebAudioStatus(`Loading ${result.track?.title || "track"}…`);
+			setWebAudioStatus(
+				result.target === "discord" ?
+					`Using the existing Discord player${result.track?.title ? ` for ${result.track.title}` : ""}; playback stays synchronized`
+				: mirrorsVoice ? `Playing browser copy of ${result.track?.title || "track"}; Discord voice is unchanged`
+				: `Loading ${result.track?.title || "track"}…`,
+			);
 			setError(null);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Could not start browser audio";
@@ -254,15 +274,125 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		return result;
 	};
 
-	const toggleWebAudioMode = () => {
+	const toggleWebAudioMode = async () => {
 		if (webAudioMode && webStreamActiveRef.current) {
-			void sendWebStreamControl("stop")
-				.catch((err) => console.error("Could not stop browser audio:", err))
-				.finally(() => {
-					void webAudioClient.current?.disconnect();
+			if (webStreamSharesDiscordPlayerRef.current) {
+				setWebAudioStatus("Returning to Discord voice playback…");
+				setWebAudioError(null);
+				try {
+					const response = await fetch(apiUrl("/api/stream/output"), {
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${token}`,
+							"Content-Type": "application/json",
+							"ngrok-skip-browser-warning": "true",
+						},
+						body: JSON.stringify({ mode: "voice" }),
+					});
+					const result = await response.json();
+					if (!response.ok) throw new Error(result.error || `Voice output failed (${response.status})`);
+					await webAudioClient.current?.disconnect();
+					webAudioModeRef.current = false;
+					setWebAudioMode(false);
 					setWebStreamRunning(false);
+					webStreamSessionIdRef.current = null;
+					webStreamSharesDiscordPlayerRef.current = false;
+					setStats(null);
+					setWebAudioStatus("Returned to Discord voice playback");
+				} catch (error) {
+					const message = error instanceof Error ? error.message : "Could not return to Discord voice playback";
+					setWebAudioError(message);
+					setWebAudioStatus("Output switch failed");
+				}
+				return;
+			}
+			if (webStreamMirrorsVoiceRef.current) {
+				setWebAudioStatus("Returning to Discord voice playback…");
+				setWebAudioError(null);
+				try {
+					await sendWebStreamControl("stop");
+					await webAudioClient.current?.disconnect();
+					webAudioModeRef.current = false;
+					setWebAudioMode(false);
+					setWebStreamRunning(false);
+					webStreamSessionIdRef.current = null;
+					webStreamMirrorsVoiceRef.current = false;
+					webStreamSharesDiscordPlayerRef.current = false;
+					setStats(null);
+					setWebAudioStatus("Returned to Discord voice playback");
+				} catch (error) {
+					const message = error instanceof Error ? error.message : "Could not return to Discord voice playback";
+					setWebAudioError(message);
+					setWebAudioStatus("Output switch failed");
+				}
+				return;
+			}
+
+			setWebAudioStatus("Connecting the player to Discord voice…");
+			setWebAudioError(null);
+			try {
+				const response = await fetch(apiUrl("/api/stream/output"), {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+						"ngrok-skip-browser-warning": "true",
+					},
+					body: JSON.stringify({ mode: "voice" }),
 				});
+				const result = await response.json();
+				if (!response.ok) throw new Error(result.error || `Voice output failed (${response.status})`);
+				await webAudioClient.current?.disconnect();
+				webAudioModeRef.current = false;
+				setWebAudioMode(false);
+				setWebAudioStatus(`Playing in Discord voice${result.channel?.name ? `: ${result.channel.name}` : ""}`);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "Could not switch to Discord voice";
+				setWebAudioError(message);
+				setWebAudioStatus("Output switch failed");
+			}
+			return;
 		}
+
+		if (!webAudioMode && webStreamActiveRef.current && webStreamSessionIdRef.current) {
+			setWebAudioStatus("Switching playback to browser…");
+			setWebAudioError(null);
+			try {
+				if (!token) throw new Error("Please log in to use browser audio.");
+				const client = getWebAudioClient();
+				await client.connect({
+					gatewayUrl: streamWsUrl,
+					token,
+					sessionId: webStreamSessionIdRef.current,
+				});
+				const response = await fetch(apiUrl("/api/stream/output"), {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+						"ngrok-skip-browser-warning": "true",
+					},
+					body: JSON.stringify({ mode: "web" }),
+				});
+				const result = await response.json();
+				if (!response.ok) throw new Error(result.error || `Browser output failed (${response.status})`);
+				webAudioModeRef.current = true;
+				setWebAudioMode(true);
+				setWebAudioStatus("Playing in browser");
+			} catch (error) {
+				await webAudioClient.current?.disconnect().catch(() => {});
+				const message = error instanceof Error ? error.message : "Could not switch to browser audio";
+				setWebAudioError(message);
+				setWebAudioStatus("Output switch failed");
+			}
+			return;
+		}
+
+		if (!webAudioMode && stats?.track?.url) {
+			await playOnWeb(stats.track.url, stats.timestamp, true);
+			return;
+		}
+
 		const nextMode = !webAudioMode;
 		webAudioModeRef.current = nextMode;
 		setWebAudioMode(nextMode);
@@ -565,20 +695,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			album: "Melody",
 			artwork: [
 				{
-					src: proxyImage(
-						track.thumbnail ||
-							botInfo?.avatars ||
-							"https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=512&auto=format&fit=crop",
-					),
+					src: proxyImage(track.thumbnail || botInfo?.avatars),
 					sizes: "512x512",
 					type: "image/jpeg",
 				},
 				{
-					src: proxyImage(
-						track.thumbnail ||
-							botInfo?.avatars ||
-							"https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=192&auto=format&fit=crop",
-					),
+					src: proxyImage(track.thumbnail || botInfo?.avatars),
 					sizes: "192x192",
 					type: "image/jpeg",
 				},
@@ -699,7 +821,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	const sendCommand = (event: string, data: any = {}) => {
-		if (webAudioModeRef.current) {
+		if (webAudioModeRef.current || webStreamActiveRef.current) {
 			if (!webStreamActiveRef.current) {
 				setWebAudioError("Start browser playback by selecting a track from search results.");
 				return;
@@ -917,6 +1039,18 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								<span className='truncate'>{track.title}</span>
 							</button>
 						))}
+						<label className='flex items-center gap-2 text-[10px] text-zinc-400'>
+							<span className='shrink-0'>Playback target</span>
+							<select
+								aria-label='Playback target'
+								value={streamTarget}
+								onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
+								className='min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900 px-2 py-1.5 text-[10px] text-white'>
+								<option value='auto'>Use current Discord player when available</option>
+								<option value='browser'>Browser-only player</option>
+							</select>
+							<span className='hidden text-[9px] text-zinc-500 sm:inline'>Applies to the next track.</span>
+						</label>
 						{searchState === "loading" && <p className='px-1 font-mono text-[10px] text-cyan-200'>Searching the network...</p>}
 						{searchState === "empty" && <p className='px-1 text-[10px] text-zinc-400'>No tracks found. Try another search.</p>}
 						{searchState === "error" && <p className='px-1 text-[10px] text-rose-300'>{searchError}</p>}
@@ -1134,13 +1268,29 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							</button>
 						</form>
 						{webAudioMode && (
-							<div
-								className='-mt-6 flex flex-wrap items-center gap-2 text-xs'
-								role='status'
-								aria-live='polite'>
-								<span className='font-mono text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
-								{webAudioError && <span className='text-rose-300'>{webAudioError}</span>}
-							</div>
+							<>
+								<div
+									className='-mt-6 flex flex-wrap items-center gap-2 text-xs'
+									role='status'
+									aria-live='polite'>
+									<span className='font-mono text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
+									{webAudioError && <span className='text-rose-300'>{webAudioError}</span>}
+								</div>
+								<label className='-mt-4 flex items-center gap-2 text-xs text-zinc-400'>
+									<span className='shrink-0'>Playback target</span>
+									<select
+										aria-label='Playback target'
+										value={streamTarget}
+										onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
+										className='min-w-0 rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-xs text-white'>
+										<option value='auto'>Use current Discord player when available</option>
+										<option value='browser'>Browser-only player</option>
+									</select>
+									<span className='hidden text-[10px] text-zinc-500 sm:inline'>
+										Applies to new tracks; Auto prevents a second player from joining the same voice channel.
+									</span>
+								</label>
+							</>
 						)}
 
 						{/* Results or Queue */}
@@ -1472,11 +1622,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								className='cyber-now-playing-cover flex min-h-0 flex-grow flex-col justify-center gap-6'>
 								<div className='cyber-art-frame relative flex min-h-0 flex-1 items-center justify-center'>
 									<img
-										src={proxyImage(
-											stats?.track?.thumbnail ||
-												botInfo?.avatars ||
-												"https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop",
-										)}
+										src={proxyImage(stats?.track?.thumbnail || botInfo?.avatars)}
 										alt='Album Art'
 										className='cyber-artwork h-full w-full rounded-xl object-cover'
 									/>
