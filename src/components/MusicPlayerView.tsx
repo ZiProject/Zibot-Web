@@ -67,6 +67,19 @@ function getStreamWebSocketUrl() {
 	return url.toString();
 }
 
+interface StreamPlayersInfo {
+	sessionId: string;
+	voice: { guildId: string; channelId: string; name: string | null } | null;
+	discord: {
+		playerId: string;
+		channel: { id: string | null; name: string | null; guildName: string | null };
+		playing: boolean;
+		attached: boolean;
+	} | null;
+	browser: { playerId: string; playing: boolean; attached: boolean } | null;
+	selectedTarget: "discord" | "browser" | null;
+}
+
 export function MusicPlayerView({ botInfo }: HeroProps) {
 	const { t } = useLanguage();
 	const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -89,6 +102,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [webAudioStatus, setWebAudioStatus] = useState("");
 	const [webAudioError, setWebAudioError] = useState<string | null>(null);
 	const [streamTarget, setStreamTarget] = useState<"auto" | "browser">("auto");
+	const [playersInfo, setPlayersInfo] = useState<StreamPlayersInfo | null>(null);
+	const [attachedPlayerId, setAttachedPlayerId] = useState<string | null>(null);
+	const [switchingToDiscord, setSwitchingToDiscord] = useState(false);
+	const playersSyncingRef = useRef(false);
+	const lastAttachFailureRef = useRef(0);
 	const webAudioClient = useRef<WebAudioClient | null>(null);
 	const webStreamActiveRef = useRef(false);
 	const webStreamSessionIdRef = useRef<string | null>(null);
@@ -241,6 +259,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			webStreamSessionIdRef.current = result.sessionId;
 			webStreamMirrorsVoiceRef.current = mirrorsVoice;
 			webStreamSharesDiscordPlayerRef.current = result.target === "discord";
+			setAttachedPlayerId(result.playerId ?? null);
+			void refreshPlayersInfo();
 			enterWebAudioMode();
 			setWebStreamRunning(true);
 			setWebAudioStatus(
@@ -257,6 +277,151 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			setWebAudioStatus("Browser audio failed");
 		}
 	};
+
+	const streamHeaders = () => ({
+		Authorization: `Bearer ${token}`,
+		"Content-Type": "application/json",
+		"ngrok-skip-browser-warning": "true",
+	});
+
+	const refreshPlayersInfo = async (): Promise<StreamPlayersInfo | null> => {
+		if (!token) return null;
+		try {
+			const response = await fetch(apiUrl("/api/stream/players"), { headers: streamHeaders() });
+			if (!response.ok) return null;
+			const info = (await response.json()) as StreamPlayersInfo;
+			setPlayersInfo(info);
+			return info;
+		} catch {
+			return null;
+		}
+	};
+
+	// Registers the browser audio output on the user's existing Discord player (no new session).
+	const attachToDiscordPlayer = async (migrate = false): Promise<boolean> => {
+		if (!token) return false;
+		try {
+			const client = getWebAudioClient();
+			if (client.state === "disconnected") {
+				await client.connect({ gatewayUrl: streamWsUrl, token, nextPublisher: true });
+			}
+			const response = await fetch(apiUrl("/api/stream/attach"), {
+				method: "POST",
+				headers: streamHeaders(),
+				body: JSON.stringify({ migrate }),
+			});
+			const result = await response.json();
+			if (!response.ok) {
+				if (!webStreamActiveRef.current) await client.disconnect().catch(() => {});
+				if (result.code === "NO_DISCORD_PLAYER") return false;
+				throw new Error(result.error || `Attach failed (${response.status})`);
+			}
+			if (client.sessionId && client.sessionId !== result.sessionId) {
+				throw new Error("The browser listener connected to a different player session");
+			}
+			webStreamSessionIdRef.current = result.sessionId;
+			webStreamMirrorsVoiceRef.current = false;
+			webStreamSharesDiscordPlayerRef.current = true;
+			setAttachedPlayerId(result.playerId ?? null);
+			enterWebAudioMode();
+			setWebStreamRunning(true);
+			setWebAudioError(null);
+			setWebAudioStatus(`Connected to the Discord player${result.channel?.name ? ` in ${result.channel.name}` : ""}`);
+			void refreshPlayersInfo();
+			return true;
+		} catch (err) {
+			lastAttachFailureRef.current = Date.now();
+			const message = err instanceof Error ? err.message : "Could not connect to the Discord player";
+			console.error("Attach to Discord player failed:", err);
+			setWebAudioError(message);
+			return false;
+		}
+	};
+
+	const switchToDiscordPlayer = async () => {
+		setSwitchingToDiscord(true);
+		try {
+			await attachToDiscordPlayer(true);
+		} finally {
+			setSwitchingToDiscord(false);
+		}
+	};
+
+	const discordChannelLabel = playersInfo?.discord?.channel.name ? `#${playersInfo.discord.channel.name}` : "your voice channel";
+	const discordPlayerAvailable = Boolean(playersInfo?.discord);
+	const addingToDiscord = streamTarget === "auto" && discordPlayerAvailable;
+	const showSwitchBanner =
+		streamTarget === "auto" &&
+		discordPlayerAvailable &&
+		!playersInfo?.discord?.attached &&
+		Boolean(playersInfo?.browser?.playing);
+
+	const renderTargetPicker = (compact: boolean) => (
+		<div className={compact ? "space-y-1.5" : "-mt-4 space-y-2"}>
+			<label className={`flex items-center gap-2 text-zinc-400 ${compact ? "text-[10px]" : "text-xs"}`}>
+				<span className='shrink-0'>Add songs to</span>
+				<select
+					aria-label='Playback target'
+					value={streamTarget}
+					onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
+					className={`min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900 text-white ${compact ? "px-2 py-1.5 text-[10px]" : "px-3 py-2 text-xs"}`}>
+					<option value='auto'>
+						{discordPlayerAvailable ? `Discord player · ${discordChannelLabel}` : "Discord player (join a voice channel first)"}
+					</option>
+					<option value='browser'>Browser-only player (never joins Discord voice)</option>
+				</select>
+			</label>
+			<p className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} text-zinc-500`}>
+				{addingToDiscord ?
+					`Songs go into the Discord player in ${discordChannelLabel}; the web shares that same player.`
+				: streamTarget === "browser" ?
+					"Songs play only in this browser. This player can't take over the Discord voice connection."
+				:	"No Discord player found: songs play in a browser-only player until you start one in voice."}
+			</p>
+			{showSwitchBanner && (
+				<div className='flex flex-wrap items-center gap-2 rounded-lg border border-lime-300/20 bg-lime-300/5 px-3 py-2 text-[10px] text-lime-200'>
+					<span className='min-w-0 flex-1'>
+						A Discord player is running in {discordChannelLabel}. Your browser-only song will move there.
+					</span>
+					<button
+						type='button'
+						disabled={switchingToDiscord}
+						onClick={() => void switchToDiscordPlayer()}
+						className='shrink-0 rounded-md bg-lime-300/20 px-2 py-1 font-bold uppercase tracking-wider hover:bg-lime-300/30 disabled:opacity-50'>
+						{switchingToDiscord ? "Switching…" : "Use Discord player"}
+					</button>
+				</div>
+			)}
+		</div>
+	);
+
+	// While in browser-audio mode, keep looking for the user's Discord player and register on it
+	// right away (same as a web session that was already running when Discord connected).
+	useEffect(() => {
+		if (!token || !webAudioMode) return;
+		let cancelled = false;
+		const sync = async () => {
+			if (cancelled || playersSyncingRef.current) return;
+			playersSyncingRef.current = true;
+			try {
+				const info = await refreshPlayersInfo();
+				if (cancelled || !info) return;
+				const retryAllowed = Date.now() - lastAttachFailureRef.current > 30_000;
+				if (streamTarget === "auto" && info.discord && !info.discord.attached && !info.browser?.playing && retryAllowed) {
+					await attachToDiscordPlayer(false);
+				}
+			} finally {
+				playersSyncingRef.current = false;
+			}
+		};
+		void sync();
+		const timer = window.setInterval(() => void sync(), 5000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(timer);
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [token, webAudioMode, streamTarget]);
 
 	const sendWebStreamControl = async (action: string, values: Record<string, unknown> = {}) => {
 		if (!token) throw new Error("Please log in to control browser audio");
@@ -296,6 +461,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					setWebAudioMode(false);
 					setWebStreamRunning(false);
 					webStreamSessionIdRef.current = null;
+					setAttachedPlayerId(null);
 					webStreamSharesDiscordPlayerRef.current = false;
 					setStats(null);
 					setWebAudioStatus("Returned to Discord voice playback");
@@ -316,6 +482,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					setWebAudioMode(false);
 					setWebStreamRunning(false);
 					webStreamSessionIdRef.current = null;
+					setAttachedPlayerId(null);
 					webStreamMirrorsVoiceRef.current = false;
 					webStreamSharesDiscordPlayerRef.current = false;
 					setStats(null);
@@ -504,7 +671,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			controller.abort();
 			if (reconnectTimeout) clearTimeout(reconnectTimeout);
 		};
-	}, [webStreamActive, token]);
+	}, [webStreamActive, token, attachedPlayerId]);
 
 	useEffect(
 		() => () => {
@@ -1039,18 +1206,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								<span className='truncate'>{track.title}</span>
 							</button>
 						))}
-						<label className='flex items-center gap-2 text-[10px] text-zinc-400'>
-							<span className='shrink-0'>Playback target</span>
-							<select
-								aria-label='Playback target'
-								value={streamTarget}
-								onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
-								className='min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900 px-2 py-1.5 text-[10px] text-white'>
-								<option value='auto'>Use current Discord player when available</option>
-								<option value='browser'>Browser-only player</option>
-							</select>
-							<span className='hidden text-[9px] text-zinc-500 sm:inline'>Applies to the next track.</span>
-						</label>
+						{renderTargetPicker(true)}
 						{searchState === "loading" && <p className='px-1 font-mono text-[10px] text-cyan-200'>Searching the network...</p>}
 						{searchState === "empty" && <p className='px-1 text-[10px] text-zinc-400'>No tracks found. Try another search.</p>}
 						{searchState === "error" && <p className='px-1 text-[10px] text-rose-300'>{searchError}</p>}
@@ -1276,20 +1432,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 									<span className='font-mono text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
 									{webAudioError && <span className='text-rose-300'>{webAudioError}</span>}
 								</div>
-								<label className='-mt-4 flex items-center gap-2 text-xs text-zinc-400'>
-									<span className='shrink-0'>Playback target</span>
-									<select
-										aria-label='Playback target'
-										value={streamTarget}
-										onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
-										className='min-w-0 rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-xs text-white'>
-										<option value='auto'>Use current Discord player when available</option>
-										<option value='browser'>Browser-only player</option>
-									</select>
-									<span className='hidden text-[10px] text-zinc-500 sm:inline'>
-										Applies to new tracks; Auto prevents a second player from joining the same voice channel.
-									</span>
-								</label>
+								{renderTargetPicker(false)}
 							</>
 						)}
 
