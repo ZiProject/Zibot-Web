@@ -24,6 +24,7 @@ import {
 	LoaderCircle,
 	CircleAlert,
 	X,
+	Headphones,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { BotInfo } from "../services/discordActivity";
@@ -80,6 +81,72 @@ interface StreamPlayersInfo {
 	selectedTarget: "discord" | "browser" | null;
 }
 
+/**
+ * Single-line text that ellipsizes normally and scrolls to its end while the surrounding row
+ * (`data-marquee-host`) is hovered or focused, so long titles can be read in full.
+ */
+function MarqueeText({ text, className = "" }: { text: string; className?: string }) {
+	const ref = useRef<HTMLSpanElement>(null);
+	const frame = useRef<number | null>(null);
+	const [scrolling, setScrolling] = useState(false);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el || typeof window === "undefined") return;
+		const host = (el.closest("[data-marquee-host]") as HTMLElement | null) ?? el;
+		const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+		const stop = () => {
+			if (frame.current !== null) cancelAnimationFrame(frame.current);
+			frame.current = null;
+			el.scrollLeft = 0;
+			setScrolling(false);
+		};
+		const start = () => {
+			if (reduceMotion || frame.current !== null) return;
+			const max = el.scrollWidth - el.clientWidth;
+			if (max <= 2) return;
+			setScrolling(true);
+			const pause = 700;
+			const travel = (max / 48) * 1000; // 48px per second
+			const cycle = pause * 2 + travel;
+			let startedAt: number | null = null;
+			const tick = (now: number) => {
+				if (startedAt === null) startedAt = now;
+				const t = (now - startedAt) % cycle;
+				el.scrollLeft =
+					t < pause ? 0
+					: t < pause + travel ? ((t - pause) / travel) * max
+					: max;
+				frame.current = requestAnimationFrame(tick);
+			};
+			frame.current = requestAnimationFrame(tick);
+		};
+
+		host.addEventListener("mouseenter", start);
+		host.addEventListener("mouseleave", stop);
+		host.addEventListener("focusin", start);
+		host.addEventListener("focusout", stop);
+		return () => {
+			host.removeEventListener("mouseenter", start);
+			host.removeEventListener("mouseleave", stop);
+			host.removeEventListener("focusin", start);
+			host.removeEventListener("focusout", stop);
+			if (frame.current !== null) cancelAnimationFrame(frame.current);
+			frame.current = null;
+		};
+	}, [text]);
+
+	return (
+		<span
+			ref={ref}
+			title={text}
+			className={`block min-w-0 overflow-hidden whitespace-nowrap ${scrolling ? "text-clip" : "text-ellipsis"} ${className}`}>
+			{text}
+		</span>
+	);
+}
+
 export function MusicPlayerView({ botInfo }: HeroProps) {
 	const { t } = useLanguage();
 	const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -105,6 +172,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [playersInfo, setPlayersInfo] = useState<StreamPlayersInfo | null>(null);
 	const [attachedPlayerId, setAttachedPlayerId] = useState<string | null>(null);
 	const [switchingToDiscord, setSwitchingToDiscord] = useState(false);
+	const [outputSwitching, setOutputSwitching] = useState(false);
 	const playersSyncingRef = useRef(false);
 	const lastAttachFailureRef = useRef(0);
 	const webAudioClient = useRef<WebAudioClient | null>(null);
@@ -287,7 +355,9 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const refreshPlayersInfo = async (): Promise<StreamPlayersInfo | null> => {
 		if (!token) return null;
 		try {
-			const response = await fetch(apiUrl("/api/stream/players"), { headers: streamHeaders() });
+			const response = await fetch(apiUrl("/api/stream/players"), {
+				headers: { Authorization: `Bearer ${token}`, "ngrok-skip-browser-warning": "true" },
+			});
 			if (!response.ok) return null;
 			const info = (await response.json()) as StreamPlayersInfo;
 			setPlayersInfo(info);
@@ -356,42 +426,79 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		!playersInfo?.discord?.attached &&
 		Boolean(playersInfo?.browser?.playing);
 
-	const renderTargetPicker = (compact: boolean) => (
-		<div className={compact ? "space-y-1.5" : "-mt-4 space-y-2"}>
-			<label className={`flex items-center gap-2 text-zinc-400 ${compact ? "text-[10px]" : "text-xs"}`}>
-				<span className='shrink-0'>Add songs to</span>
-				<select
-					aria-label='Playback target'
-					value={streamTarget}
-					onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
-					className={`min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900 text-white ${compact ? "px-2 py-1.5 text-[10px]" : "px-3 py-2 text-xs"}`}>
-					<option value='auto'>
-						{discordPlayerAvailable ? `Discord player · ${discordChannelLabel}` : "Discord player (join a voice channel first)"}
-					</option>
-					<option value='browser'>Browser-only player (never joins Discord voice)</option>
-				</select>
-			</label>
-			<p className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} text-zinc-500`}>
-				{addingToDiscord ?
-					`Songs go into the Discord player in ${discordChannelLabel}; the web shares that same player.`
-				: streamTarget === "browser" ?
-					"Songs play only in this browser. This player can't take over the Discord voice connection."
-				:	"No Discord player found: songs play in a browser-only player until you start one in voice."}
-			</p>
+	const handleOutputSwitch = async (toBrowser: boolean) => {
+		if (outputSwitching || webAudioMode === toBrowser) return;
+		setOutputSwitching(true);
+		try {
+			await toggleWebAudioMode();
+		} finally {
+			setOutputSwitching(false);
+		}
+	};
+
+	// Small segmented switch: where the audio is heard (Discord voice <-> this browser).
+	const renderStreamSwitch = (full: boolean) => (
+		<div
+			role='radiogroup'
+			aria-label='Audio output'
+			className={`relative inline-grid grid-cols-2 rounded-full border border-white/10 bg-black/30 p-0.5 text-[10px] font-black uppercase tracking-wider ${full ? "w-full" : "w-[148px]"} ${outputSwitching ? "opacity-70" : ""}`}>
+			<span
+				aria-hidden
+				className={`pointer-events-none absolute bottom-0.5 top-0.5 w-[calc(50%-2px)] rounded-full transition-all duration-200 ${webAudioMode ? "left-[calc(50%+1px)] bg-lime-300/20 shadow-[0_0_14px_rgba(190,242,100,0.25)]" : "left-0.5 bg-cyan-300/20 shadow-[0_0_14px_rgba(34,211,238,0.25)]"}`}
+			/>
+			{[
+				{ key: "discord", label: "Discord", Icon: Music, active: !webAudioMode, hint: "Play through the bot in Discord voice" },
+				{ key: "browser", label: "Browser", Icon: Headphones, active: webAudioMode, hint: "Listen in this browser" },
+			].map(({ key, label, Icon, active, hint }) => (
+				<button
+					key={key}
+					type='button'
+					role='radio'
+					aria-checked={active}
+					title={hint}
+					disabled={outputSwitching}
+					onClick={() => void handleOutputSwitch(key === "browser")}
+					className={`relative z-10 flex items-center justify-center gap-1.5 rounded-full py-1.5 transition-colors disabled:cursor-wait ${
+						active ?
+							key === "browser" ?
+								"text-lime-200"
+							:	"text-cyan-100"
+						:	"text-zinc-500 hover:text-zinc-200"
+					}`}>
+					<Icon className='h-3 w-3' />
+					{label}
+				</button>
+			))}
+		</div>
+	);
+
+	// Compact "add songs to" control for browser mode (replaces the old select + description).
+	const renderTargetPill = () => (
+		<div className='flex shrink-0 items-center gap-1.5'>
 			{showSwitchBanner && (
-				<div className='flex flex-wrap items-center gap-2 rounded-lg border border-lime-300/20 bg-lime-300/5 px-3 py-2 text-[10px] text-lime-200'>
-					<span className='min-w-0 flex-1'>
-						A Discord player is running in {discordChannelLabel}. Your browser-only song will move there.
-					</span>
-					<button
-						type='button'
-						disabled={switchingToDiscord}
-						onClick={() => void switchToDiscordPlayer()}
-						className='shrink-0 rounded-md bg-lime-300/20 px-2 py-1 font-bold uppercase tracking-wider hover:bg-lime-300/30 disabled:opacity-50'>
-						{switchingToDiscord ? "Switching…" : "Use Discord player"}
-					</button>
-				</div>
+				<button
+					type='button'
+					disabled={switchingToDiscord}
+					onClick={() => void switchToDiscordPlayer()}
+					title={`A Discord player is running in ${discordChannelLabel}. Your browser-only song will move there.`}
+					className='rounded-full bg-lime-300/15 px-2 py-0.5 text-[10px] font-bold text-lime-200 transition-colors hover:bg-lime-300/25 disabled:opacity-50'>
+					{switchingToDiscord ? "Switching…" : "Use Discord player"}
+				</button>
 			)}
+			<select
+				aria-label='Add songs to'
+				value={streamTarget}
+				title={
+					addingToDiscord ? `Songs go into the Discord player in ${discordChannelLabel}; the web shares that same player.`
+					: streamTarget === "browser" ?
+						"Songs play only in this browser and never take over the Discord voice connection."
+					:	"No Discord player found: songs play in a browser-only player until you start one in voice."
+				}
+				onChange={(event) => setStreamTarget(event.target.value === "browser" ? "browser" : "auto")}
+				className='max-w-[150px] truncate rounded-full border border-white/10 bg-zinc-900 px-2 py-0.5 text-[10px] font-bold text-zinc-200 outline-none focus:border-cyan-300/40'>
+				<option value='auto'>{discordPlayerAvailable ? `→ Discord ${discordChannelLabel}` : "→ Discord player"}</option>
+				<option value='browser'>→ Browser only</option>
+			</select>
 		</div>
 	);
 
@@ -545,6 +652,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				if (!response.ok) throw new Error(result.error || `Browser output failed (${response.status})`);
 				webAudioModeRef.current = true;
 				setWebAudioMode(true);
+				setAttachedPlayerId(result.playerId ?? null);
+				void refreshPlayersInfo();
 				setWebAudioStatus("Playing in browser");
 			} catch (error) {
 				await webAudioClient.current?.disconnect().catch(() => {});
@@ -1206,7 +1315,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								<span className='truncate'>{track.title}</span>
 							</button>
 						))}
-						{renderTargetPicker(true)}
+						{renderTargetPill()}
 						{searchState === "loading" && <p className='px-1 font-mono text-[10px] text-cyan-200'>Searching the network...</p>}
 						{searchState === "empty" && <p className='px-1 text-[10px] text-zinc-400'>No tracks found. Try another search.</p>}
 						{searchState === "error" && <p className='px-1 text-[10px] text-rose-300'>{searchError}</p>}
@@ -1312,6 +1421,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					</div>
 				</div>
 
+				<div className='-mb-4 space-y-2'>
+					<p className='px-1 text-[9px] font-black uppercase tracking-[0.24em] text-zinc-500'>Output</p>
+					{renderStreamSwitch(true)}
+				</div>
+
 				<nav className='space-y-1'>
 					{[
 						{ icon: LayoutGrid, label: "Home", active: searchState === "idle" && !searchQuery, onClick: clearSearch },
@@ -1360,304 +1474,360 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				</div>
 			</div>
 
-			{/* Main Content Area */}
-			<div className='relative z-10 flex min-w-0 flex-grow flex-col pb-20 md:pb-0'>
-				<div className='custom-scrollbar flex-grow overflow-y-auto p-4 md:p-8'>
-					<div className='mx-auto max-w-4xl space-y-8 md:space-y-10'>
-						{/* Search Bar */}
-						<form
-							className='sticky top-0 z-20 flex items-center gap-3 bg-[#080b10]/90 py-3 backdrop-blur-xl'
-							onSubmit={(event) => {
-								event.preventDefault();
-								void handleSearch();
-							}}>
-							<div className='relative flex-grow'>
-								<Search className='absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-300/70' />
-								<input
-									ref={searchInputRef}
-									placeholder='Search songs, artists, albums...'
-									aria-label='Search songs, artists, albums'
-									className='cyber-input w-full rounded-xl py-4 ps-12 pe-4 text-sm outline-none transition-all'
-									value={searchQuery}
-									onChange={(e) => {
-										setSearchQuery(e.target.value);
-										latestSearchId.current += 1;
-										setSearchResults([]);
-										if (searchState !== "idle") {
-											setSearchState("idle");
-											setSearchError(null);
-										}
-									}}
-								/>
-								{searchQuery && (
-									<button
-										type='button'
-										onClick={clearSearch}
-										aria-label='Clear search'
-										className='absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white'>
-										<X className='h-4 w-4' />
-									</button>
-								)}
-							</div>
-							<button
-								type='submit'
-								disabled={!searchQuery.trim() || searchState === "loading"}
-								aria-label={searchState === "loading" ? "Searching" : "Search"}
-								className='cyber-action flex min-w-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-4 text-sm font-black uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-45 sm:min-w-[108px] sm:px-5'>
-								{searchState === "loading" ?
-									<>
-										<LoaderCircle className='h-4 w-4 animate-spin' />
-										<span className='hidden sm:inline'>Searching...</span>
-									</>
-								:	<>
-										<Search className='h-4 w-4' />
-										<span className='hidden sm:inline'>Search</span>
-									</>
-								}
-							</button>
-							<button
-								type='button'
-								onClick={toggleWebAudioMode}
-								aria-pressed={webAudioMode}
-								className={`shrink-0 rounded-xl border px-2.5 py-4 text-[10px] font-bold transition-all sm:px-4 sm:text-xs ${webAudioMode ? "border-lime-300/30 bg-lime-300/10 text-lime-200" : "border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/10"}`}>
-								{webAudioMode ? "Browser audio" : "Discord voice"}
-							</button>
-						</form>
-						{webAudioMode && (
-							<>
+			{/* Main Content Area: one fixed page. Only the list panel scrolls, so the layout never resizes. */}
+			<div className='relative z-10 flex min-h-0 min-w-0 flex-grow flex-col pb-20 md:pb-0'>
+				<div className='mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-3 p-4 md:gap-4 md:p-8'>
+					{/* Search Bar */}
+					<form
+						className='flex shrink-0 items-center gap-3'
+						onSubmit={(event) => {
+							event.preventDefault();
+							void handleSearch();
+						}}>
+						<div className='relative flex-grow'>
+							<Search className='absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-300/70' />
+							<input
+								ref={searchInputRef}
+								placeholder='Search songs, artists, albums...'
+								aria-label='Search songs, artists, albums'
+								className='cyber-input w-full rounded-xl py-3.5 ps-12 pe-4 text-sm outline-none transition-all'
+								value={searchQuery}
+								onChange={(e) => {
+									setSearchQuery(e.target.value);
+									latestSearchId.current += 1;
+									setSearchResults([]);
+									if (searchState !== "idle") {
+										setSearchState("idle");
+										setSearchError(null);
+									}
+								}}
+							/>
+							{searchQuery && (
+								<button
+									type='button'
+									onClick={clearSearch}
+									aria-label='Clear search'
+									className='absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white'>
+									<X className='h-4 w-4' />
+								</button>
+							)}
+						</div>
+						<button
+							type='submit'
+							disabled={!searchQuery.trim() || searchState === "loading"}
+							aria-label={searchState === "loading" ? "Searching" : "Search"}
+							className='cyber-action flex min-w-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-3.5 text-sm font-black uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-45 sm:min-w-[108px] sm:px-5'>
+							{searchState === "loading" ?
+								<>
+									<LoaderCircle className='h-4 w-4 animate-spin' />
+									<span className='hidden sm:inline'>Searching...</span>
+								</>
+							:	<>
+									<Search className='h-4 w-4' />
+									<span className='hidden sm:inline'>Search</span>
+								</>
+							}
+						</button>
+					</form>
+
+					{/* Status row: constant height so nothing jumps when the mode changes */}
+					<div
+						className='flex h-7 shrink-0 items-center gap-2 text-[11px]'
+						role='status'
+						aria-live='polite'>
+						<span className='lg:hidden'>{renderStreamSwitch(false)}</span>
+						<span
+							className={`min-w-0 flex-1 truncate font-mono ${webAudioMode && webAudioError ? "text-rose-300" : "text-zinc-400"}`}>
+							{webAudioMode ?
+								webAudioError || webAudioStatus || "Select a track to start browser playback."
+							: connected ?
+								"Discord voice · live sync"
+							:	"Reconnecting..."}
+						</span>
+						{webAudioMode && renderTargetPill()}
+					</div>
+
+					<div className='custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-gutter:stable]'>
+						<div className='flex min-h-full flex-col'>
+							{/* Results or Queue */}
+							{searchState === "loading" ?
 								<div
-									className='-mt-6 flex flex-wrap items-center gap-2 text-xs'
+									className='cyber-card space-y-4 rounded-2xl p-5 md:p-6'
 									role='status'
 									aria-live='polite'>
-									<span className='font-mono text-zinc-400'>{webAudioStatus || "Select a track to start browser playback."}</span>
-									{webAudioError && <span className='text-rose-300'>{webAudioError}</span>}
-								</div>
-								{renderTargetPicker(false)}
-							</>
-						)}
-
-						{/* Results or Queue */}
-						{searchState === "loading" ?
-							<div
-								className='cyber-card space-y-4 rounded-2xl p-5 md:p-6'
-								role='status'
-								aria-live='polite'>
-								<div className='flex items-center gap-3 text-cyan-100'>
-									<LoaderCircle className='h-5 w-5 animate-spin text-cyan-300' />
-									<div>
-										<h3 className='font-bold'>Searching the network...</h3>
-										<p className='mt-0.5 truncate text-xs text-zinc-500'>Looking for “{searchQuery.trim()}”</p>
-									</div>
-								</div>
-								{[0, 1, 2].map((item) => (
-									<div
-										key={item}
-										className='flex animate-pulse items-center gap-4 rounded-xl bg-white/[0.025] p-3'>
-										<div className='h-12 w-12 shrink-0 rounded-lg bg-white/[0.07]' />
-										<div className='min-w-0 flex-1 space-y-2'>
-											<div className='h-3 w-2/3 rounded bg-white/[0.08]' />
-											<div className='h-2 w-1/3 rounded bg-white/[0.05]' />
+									<div className='flex items-center gap-3 text-cyan-100'>
+										<LoaderCircle className='h-5 w-5 animate-spin text-cyan-300' />
+										<div>
+											<h3 className='font-bold'>Searching the network...</h3>
+											<p className='mt-0.5 truncate text-xs text-zinc-500'>Looking for “{searchQuery.trim()}”</p>
 										</div>
 									</div>
-								))}
-							</div>
-						: searchState === "error" ?
-							<div
-								className='cyber-card flex items-start gap-4 rounded-2xl p-5 md:p-6'
-								role='alert'>
-								<CircleAlert className='mt-0.5 h-5 w-5 shrink-0 text-rose-300' />
-								<div className='min-w-0 flex-1'>
-									<h3 className='font-bold text-white'>Search failed</h3>
-									<p className='mt-1 break-words text-sm text-zinc-400'>{searchError}</p>
-									<button
-										onClick={() => void handleSearch()}
-										className='mt-4 rounded-lg border border-cyan-200/20 bg-cyan-200/[0.08] px-3 py-2 text-xs font-bold text-cyan-100 transition-colors hover:bg-cyan-200/[0.15]'>
-										Try again
-									</button>
-								</div>
-							</div>
-						: searchState === "empty" ?
-							<div
-								className='cyber-card flex flex-col items-center rounded-2xl px-5 py-12 text-center'
-								role='status'>
-								<div className='mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-200/15 bg-cyan-200/[0.06]'>
-									<Search className='h-6 w-6 text-cyan-200' />
-								</div>
-								<h3 className='text-lg font-black text-white'>No tracks found</h3>
-								<p className='mt-2 max-w-sm text-sm text-zinc-400'>
-									Nothing matched “{searchQuery.trim()}”. Try a different title, artist, or link.
-								</p>
-								<button
-									onClick={() => searchInputRef.current?.focus()}
-									className='mt-5 rounded-lg border border-cyan-200/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-cyan-100 transition-colors hover:bg-cyan-200/[0.08]'>
-									Edit search
-								</button>
-							</div>
-						: searchResults.length > 0 ?
-							<div className='space-y-6'>
-								<div className='flex items-center justify-between'>
-									<div>
-										<h3 className='font-black text-2xl tracking-tight md:text-3xl'>Search Results</h3>
-										<p className='mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500'>
-											{searchResults.length} {searchResults.length === 1 ? "track" : "tracks"} found
-										</p>
-									</div>
-									<button
-										onClick={clearSearch}
-										className='rounded-lg px-3 py-2 text-xs font-bold uppercase text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-white'>
-										Clear
-									</button>
-								</div>
-								<div className='grid gap-2'>
-									{searchResults.map((track, idx) => (
+									{[0, 1, 2].map((item) => (
 										<div
-											key={`${track.url || track.title}-${idx}`}
-											className='cyber-row group flex items-center gap-3 rounded-xl p-3 transition-all md:gap-4'>
-											<img
-												src={proxyImage(track.thumbnail ?? undefined)}
-												alt={track.title}
-												className='w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover'
-											/>
-											<div className='flex-grow overflow-hidden'>
-												<h4 className='font-bold text-xs md:text-sm truncate'>{track.title}</h4>
-												<p className='text-[9px] md:text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate'>
-													{track.author}
-												</p>
-											</div>
-											<div className='flex gap-1 md:gap-2'>
-												<button
-													type='button'
-													title='Play track'
-													aria-label={`Play ${track.title}`}
-													disabled={activeTrackAction === (track.url || track.title)}
-													onClick={() => void handleTrackAction(track)}
-													className='cyber-action flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60'>
-													{activeTrackAction === (track.url || track.title) ?
-														<LoaderCircle className='h-4 w-4 animate-spin' />
-													:	<Play className='h-4 w-4 fill-current' />}
-												</button>
-												{!webAudioMode && (
-													<button
-														type='button'
-														onClick={() => void handleTrackAction(track, true)}
-														className='rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-cyan-200/20 hover:bg-cyan-200/[0.06] active:scale-95'>
-														Next
-													</button>
-												)}
+											key={item}
+											className='flex animate-pulse items-center gap-4 rounded-xl bg-white/[0.025] p-3'>
+											<div className='h-12 w-12 shrink-0 rounded-lg bg-white/[0.07]' />
+											<div className='min-w-0 flex-1 space-y-2'>
+												<div className='h-3 w-2/3 rounded bg-white/[0.08]' />
+												<div className='h-2 w-1/3 rounded bg-white/[0.05]' />
 											</div>
 										</div>
 									))}
 								</div>
-							</div>
-						:	<div className='space-y-12'>
-								{/* Related Tracks Section */}
-								{stats?.related && stats.related.length > 0 && (
-									<div className='space-y-6'>
-										<div className='flex items-center justify-between'>
-											<h3 className='font-black text-3xl tracking-tight'>Related Songs</h3>
-											<p className='text-[10px] font-black text-zinc-500 uppercase tracking-widest'>Suggestions</p>
+							: searchState === "error" ?
+								<div
+									className='cyber-card my-auto flex items-start gap-4 rounded-2xl p-5 md:p-6'
+									role='alert'>
+									<CircleAlert className='mt-0.5 h-5 w-5 shrink-0 text-rose-300' />
+									<div className='min-w-0 flex-1'>
+										<h3 className='font-bold text-white'>Search failed</h3>
+										<p className='mt-1 break-words text-sm text-zinc-400'>{searchError}</p>
+										<button
+											onClick={() => void handleSearch()}
+											className='mt-4 rounded-lg border border-cyan-200/20 bg-cyan-200/[0.08] px-3 py-2 text-xs font-bold text-cyan-100 transition-colors hover:bg-cyan-200/[0.15]'>
+											Try again
+										</button>
+									</div>
+								</div>
+							: searchState === "empty" ?
+								<div
+									className='cyber-card my-auto flex flex-col items-center rounded-2xl px-5 py-12 text-center'
+									role='status'>
+									<div className='mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-200/15 bg-cyan-200/[0.06]'>
+										<Search className='h-6 w-6 text-cyan-200' />
+									</div>
+									<h3 className='text-lg font-black text-white'>No tracks found</h3>
+									<p className='mt-2 max-w-sm text-sm text-zinc-400'>
+										Nothing matched “{searchQuery.trim()}”. Try a different title, artist, or link.
+									</p>
+									<button
+										onClick={() => searchInputRef.current?.focus()}
+										className='mt-5 rounded-lg border border-cyan-200/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-cyan-100 transition-colors hover:bg-cyan-200/[0.08]'>
+										Edit search
+									</button>
+								</div>
+							: searchResults.length > 0 ?
+								<div className='space-y-6'>
+									<div className='flex items-center justify-between'>
+										<div>
+											<h3 className='font-black text-2xl tracking-tight md:text-3xl'>Search Results</h3>
+											<p className='mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500'>
+												{searchResults.length} {searchResults.length === 1 ? "track" : "tracks"} found
+											</p>
 										</div>
-										<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
-											{stats.related.slice(0, 4).map((track, idx) => (
+										<button
+											onClick={clearSearch}
+											className='rounded-lg px-3 py-2 text-xs font-bold uppercase text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-white'>
+											Clear
+										</button>
+									</div>
+									<div
+										className='grid gap-2'
+										onKeyDown={(event) => {
+											if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+											const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-track-row]"));
+											const index = rows.indexOf(document.activeElement as HTMLElement);
+											if (index < 0) return;
+											event.preventDefault();
+											const next = Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)));
+											rows[next]?.focus();
+										}}>
+										{searchResults.map((track, idx) => {
+											const trackKey = track.url || track.title;
+											const isCurrent = Boolean(track.url) && track.url === stats?.track?.url;
+											const queuedAt = track.url ? (stats?.queue?.findIndex((queued) => queued.url === track.url) ?? -1) : -1;
+											return (
 												<div
-													key={idx}
-													className='cyber-card flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition-all group'
-													onClick={() => {
-														if (webAudioMode) void playOnWeb(track.url || track.title);
-														else sendCommand("play", { trackUrl: track.url });
-													}}>
-													<div className='relative w-16 h-16 shrink-0'>
+													key={`${trackKey}-${idx}`}
+													data-marquee-host
+													data-track-row
+													tabIndex={0}
+													role='button'
+													aria-label={`Play ${track.title}`}
+													onClick={() => void handleTrackAction(track)}
+													onKeyDown={(event) => {
+														if (event.target !== event.currentTarget) return;
+														if (event.key === "Enter" || event.key === " ") {
+															event.preventDefault();
+															void handleTrackAction(track);
+														}
+													}}
+													className={`cyber-row group flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-300/60 md:gap-4 ${isCurrent ? "ring-1 ring-lime-300/30" : ""}`}>
+													<img
+														src={proxyImage(track.thumbnail ?? undefined)}
+														alt=''
+														loading='lazy'
+														className='h-10 w-10 shrink-0 rounded-xl object-cover md:h-12 md:w-12'
+													/>
+													<div className='min-w-0 flex-grow'>
+														<h4 className='text-xs font-bold md:text-sm'>
+															<MarqueeText text={track.title} />
+														</h4>
+														<div className='flex items-center gap-2'>
+															<p className='min-w-0 truncate text-[9px] font-bold uppercase tracking-wider text-zinc-500 md:text-[10px]'>
+																{track.author}
+															</p>
+															{isCurrent && (
+																<span className='shrink-0 rounded-full bg-lime-300/15 px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-lime-200'>
+																	Now playing
+																</span>
+															)}
+															{!isCurrent && queuedAt >= 0 && (
+																<span className='shrink-0 rounded-full bg-cyan-300/10 px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-cyan-200'>
+																	In queue #{queuedAt + 1}
+																</span>
+															)}
+														</div>
+													</div>
+													<div className='flex shrink-0 gap-1 md:gap-2'>
+														<button
+															type='button'
+															title='Play track'
+															aria-label={`Play ${track.title}`}
+															disabled={activeTrackAction === trackKey}
+															onClick={(event) => {
+																event.stopPropagation();
+																void handleTrackAction(track);
+															}}
+															className='cyber-action flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60'>
+															{activeTrackAction === trackKey ?
+																<LoaderCircle className='h-4 w-4 animate-spin' />
+															:	<Play className='h-4 w-4 fill-current' />}
+														</button>
+														{!webAudioMode && (
+															<button
+																type='button'
+																title='Play next'
+																onClick={(event) => {
+																	event.stopPropagation();
+																	void handleTrackAction(track, true);
+																}}
+																className='rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-cyan-200/20 hover:bg-cyan-200/[0.06] active:scale-95'>
+																Next
+															</button>
+														)}
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								</div>
+							:	<div className='flex min-h-full flex-col gap-8'>
+									{/* Related Tracks Section */}
+									{stats?.related && stats.related.length > 0 && (
+										<div className='space-y-6'>
+											<div className='flex items-center justify-between'>
+												<h3 className='font-black text-3xl tracking-tight'>Related Songs</h3>
+												<p className='text-[10px] font-black text-zinc-500 uppercase tracking-widest'>Suggestions</p>
+											</div>
+											<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
+												{stats.related.slice(0, 4).map((track, idx) => (
+													<div
+														key={idx}
+														data-marquee-host
+														className='cyber-card flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition-all group'
+														onClick={() => {
+															if (webAudioMode) void playOnWeb(track.url || track.title);
+															else sendCommand("play", { trackUrl: track.url });
+														}}>
+														<div className='relative w-16 h-16 shrink-0'>
+															<img
+																src={proxyImage(track.thumbnail ?? undefined)}
+																alt={track.title}
+																className='h-full w-full rounded-xl object-cover'
+															/>
+															<div className='absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl'>
+																<Play className='w-6 h-6 text-white fill-current' />
+															</div>
+														</div>
+														<div className='flex-grow min-w-0'>
+															<h4 className='text-sm font-bold'>
+																<MarqueeText text={track.title} />
+															</h4>
+															<p className='text-[10px] font-bold text-zinc-500 uppercase truncate'>{track.author}</p>
+														</div>
+													</div>
+												))}
+											</div>
+										</div>
+									)}
+
+									<div
+										ref={queueSectionRef}
+										className='flex flex-1 flex-col gap-4'>
+										<div className='flex items-center justify-between'>
+											<h3 className='font-black text-2xl md:text-3xl tracking-tight'>Up Next</h3>
+											<div className='flex gap-4 text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-widest'>
+												<span>{stats?.tracks || 0} tracks</span>
+											</div>
+										</div>
+
+										<div className='flex flex-1 flex-col gap-1'>
+											{stats?.queue && stats.queue.length > 0 ?
+												stats.queue.map((track, idx) => (
+													<div
+														key={idx}
+														data-marquee-host
+														className='cyber-row group flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-all md:gap-4 md:p-4'>
+														<span className='w-4 md:w-6 text-center font-bold text-xs md:text-sm text-zinc-600 group-hover:text-discord transition-colors'>
+															{idx + 1}
+														</span>
 														<img
 															src={proxyImage(track.thumbnail ?? undefined)}
 															alt={track.title}
-															className='h-full w-full rounded-xl object-cover'
+															className='w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border border-white/5 shadow-lg'
 														/>
-														<div className='absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl'>
-															<Play className='w-6 h-6 text-white fill-current' />
+														<div className='min-w-0 flex-grow'>
+															<h4 className='text-xs font-bold md:text-sm'>
+																<MarqueeText text={track.title} />
+															</h4>
+															<p className='text-[9px] md:text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate'>
+																{track.author}
+															</p>
+														</div>
+														<div className='flex items-center gap-1 md:gap-2'>
+															<span className='text-[9px] md:text-[10px] font-mono text-zinc-500 opacity-50 group-hover:hidden'>
+																{formatDisplayDuration(track.duration)}
+															</span>
+															<button
+																title='DelTrack'
+																aria-label={`Remove ${track.title} from queue`}
+																disabled={webAudioMode}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	sendCommand("DelTrack", {
+																		TrackPosition: idx + 1,
+																	});
+																}}
+																className='flex p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:hidden md:group-hover:flex'>
+																<Trash2 className='w-3.5 h-3.5 md:w-4 md:h-4' />
+															</button>
+															<button
+																title={webAudioMode ? "Queue removal is not supported in browser audio" : "Remove from queue"}
+																aria-label={`Remove ${track.title} from queue`}
+																disabled={webAudioMode}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	sendCommand("DelTrack", {
+																		TrackPosition: idx + 1,
+																	});
+																}}
+																className='hidden p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:group-hover:flex'>
+																<Trash2 className='h-4 w-4' />
+															</button>
 														</div>
 													</div>
-													<div className='flex-grow min-w-0'>
-														<h4 className='font-bold text-sm truncate'>{track.title}</h4>
-														<p className='text-[10px] font-bold text-zinc-500 uppercase truncate'>{track.author}</p>
-													</div>
+												))
+											:	<div className='my-auto flex flex-col items-center gap-4 py-10 text-center opacity-30'>
+													<Music className='w-12 h-12' />
+													<p className='italic font-medium'>Your queue is empty</p>
 												</div>
-											))}
+											}
 										</div>
-									</div>
-								)}
-
-								<div
-									ref={queueSectionRef}
-									className='scroll-mt-6 space-y-6'>
-									<div className='flex items-center justify-between'>
-										<h3 className='font-black text-2xl md:text-3xl tracking-tight'>Up Next</h3>
-										<div className='flex gap-4 text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-widest'>
-											<span>{stats?.tracks || 0} tracks</span>
-										</div>
-									</div>
-
-									<div className='space-y-1'>
-										{stats?.queue && stats.queue.length > 0 ?
-											stats.queue.map((track, idx) => (
-												<div
-													key={idx}
-													className='cyber-row group flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-all md:gap-4 md:p-4'>
-													<span className='w-4 md:w-6 text-center font-bold text-xs md:text-sm text-zinc-600 group-hover:text-discord transition-colors'>
-														{idx + 1}
-													</span>
-													<img
-														src={proxyImage(track.thumbnail ?? undefined)}
-														alt={track.title}
-														className='w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border border-white/5 shadow-lg'
-													/>
-													<div className='flex-grow overflow-hidden'>
-														<h4 className='font-bold text-xs md:text-sm truncate'>{track.title}</h4>
-														<p className='text-[9px] md:text-[10px] uppercase font-bold text-zinc-500 tracking-wider truncate'>
-															{track.author}
-														</p>
-													</div>
-													<div className='flex items-center gap-1 md:gap-2'>
-														<span className='text-[9px] md:text-[10px] font-mono text-zinc-500 opacity-50 group-hover:hidden'>
-															{formatDisplayDuration(track.duration)}
-														</span>
-														<button
-															title='DelTrack'
-															aria-label={`Remove ${track.title} from queue`}
-															disabled={webAudioMode}
-															onClick={(e) => {
-																e.stopPropagation();
-																sendCommand("DelTrack", {
-																	TrackPosition: idx + 1,
-																});
-															}}
-															className='flex p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:hidden md:group-hover:flex'>
-															<Trash2 className='w-3.5 h-3.5 md:w-4 md:h-4' />
-														</button>
-														<button
-															title={webAudioMode ? "Queue removal is not supported in browser audio" : "Remove from queue"}
-															aria-label={`Remove ${track.title} from queue`}
-															disabled={webAudioMode}
-															onClick={(e) => {
-																e.stopPropagation();
-																sendCommand("DelTrack", {
-																	TrackPosition: idx + 1,
-																});
-															}}
-															className='hidden p-2 text-zinc-500 transition-colors hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30 md:group-hover:flex'>
-															<Trash2 className='h-4 w-4' />
-														</button>
-													</div>
-												</div>
-											))
-										:	<div className='py-20 text-center flex flex-col items-center gap-4 opacity-30'>
-												<Music className='w-12 h-12' />
-												<p className='italic font-medium'>Your queue is empty</p>
-											</div>
-										}
 									</div>
 								</div>
-							</div>
-						}
+							}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -1776,11 +1946,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								</div>
 
 								<div className='min-w-0 space-y-1 px-2 text-center md:space-y-2'>
-									<div className='w-full min-w-0 overflow-hidden'>
-										<motion.h2
-											className='block max-w-full truncate font-black text-2xl tracking-tight text-white md:text-3xl'
-											title={stats?.track?.title || "Music Engine"}>
-											{stats?.track?.title || "Music Engine"}
+									<div
+										data-marquee-host
+										className='w-full min-w-0 overflow-hidden'>
+										<motion.h2 className='block max-w-full font-black text-2xl tracking-tight text-white md:text-3xl'>
+											<MarqueeText text={stats?.track?.title || "Music Engine"} />
 										</motion.h2>
 									</div>
 									<p className='text-xs font-bold uppercase tracking-[0.2em] text-cyan-100/60 md:text-sm'>
