@@ -174,6 +174,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [switchingToDiscord, setSwitchingToDiscord] = useState(false);
 	const [outputSwitching, setOutputSwitching] = useState(false);
 	const playersSyncingRef = useRef(false);
+	const outputBusyRef = useRef(false);
 	const lastAttachFailureRef = useRef(0);
 	const webAudioClient = useRef<WebAudioClient | null>(null);
 	const webStreamActiveRef = useRef(false);
@@ -508,11 +509,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		if (!token || !webAudioMode) return;
 		let cancelled = false;
 		const sync = async () => {
-			if (cancelled || playersSyncingRef.current) return;
+			if (cancelled || playersSyncingRef.current || outputBusyRef.current) return;
 			playersSyncingRef.current = true;
 			try {
 				const info = await refreshPlayersInfo();
-				if (cancelled || !info) return;
+				if (cancelled || !info || outputBusyRef.current) return;
 				const retryAllowed = Date.now() - lastAttachFailureRef.current > 30_000;
 				if (streamTarget === "auto" && info.discord && !info.discord.attached && !info.browser?.playing && retryAllowed) {
 					await attachToDiscordPlayer(false);
@@ -546,7 +547,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		return result;
 	};
 
-	const toggleWebAudioMode = async () => {
+	const switchOutputMode = async () => {
 		if (webAudioMode && webStreamActiveRef.current) {
 			if (webStreamSharesDiscordPlayerRef.current) {
 				setWebAudioStatus("Returning to Discord voice playback…");
@@ -673,6 +674,18 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		webAudioModeRef.current = nextMode;
 		setWebAudioMode(nextMode);
 		setStats(null);
+	};
+
+	// Marks the switch as in flight so the auto-attach poll can't re-register the browser output
+	// on a player that is just being connected to / released from Discord voice.
+	const toggleWebAudioMode = async () => {
+		if (outputBusyRef.current) return;
+		outputBusyRef.current = true;
+		try {
+			await switchOutputMode();
+		} finally {
+			outputBusyRef.current = false;
+		}
 	};
 
 	useEffect(() => {
