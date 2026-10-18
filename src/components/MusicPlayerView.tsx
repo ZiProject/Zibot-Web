@@ -163,7 +163,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const [voiceChannel, setVoiceChannel] = useState<{ channelName: string; guildName: string } | null>(null);
 	const [isJoining, setIsJoining] = useState(false);
 	const [joinError, setJoinError] = useState<string | null>(null);
-	const [webAudioMode, setWebAudioMode] = useState(true);
+	const [webAudioMode, setWebAudioMode] = useState(false);
 	const [webStreamActive, setWebStreamActive] = useState(false);
 	const [webAudioConnected, setWebAudioConnected] = useState(false);
 	const [webAudioStatus, setWebAudioStatus] = useState("");
@@ -181,7 +181,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const webStreamSessionIdRef = useRef<string | null>(null);
 	const webStreamMirrorsVoiceRef = useRef(false);
 	const webStreamSharesDiscordPlayerRef = useRef(false);
-	const webAudioModeRef = useRef(true);
+	const webAudioModeRef = useRef(false);
 
 	// Thêm hằng số này bên ngoài Component hoặc trong component
 	const SILENT_SOUND_URL =
@@ -412,7 +412,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const switchToDiscordPlayer = async () => {
 		setSwitchingToDiscord(true);
 		try {
-			await attachToDiscordPlayer(true);
+			await switchToVoiceOutput();
 		} finally {
 			setSwitchingToDiscord(false);
 		}
@@ -503,21 +503,15 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		</div>
 	);
 
-	// While in browser-audio mode, keep looking for the user's Discord player and register on it
-	// right away (same as a web session that was already running when Discord connected).
+	// Periodically refresh players info without force-attaching WebAudio to active Discord voice
 	useEffect(() => {
-		if (!token || !webAudioMode) return;
+		if (!token) return;
 		let cancelled = false;
 		const sync = async () => {
 			if (cancelled || playersSyncingRef.current || outputBusyRef.current) return;
 			playersSyncingRef.current = true;
 			try {
-				const info = await refreshPlayersInfo();
-				if (cancelled || !info || outputBusyRef.current) return;
-				const retryAllowed = Date.now() - lastAttachFailureRef.current > 30_000;
-				if (streamTarget === "auto" && info.discord && !info.discord.attached && !info.browser?.playing && retryAllowed) {
-					await attachToDiscordPlayer(false);
-				}
+				await refreshPlayersInfo();
 			} finally {
 				playersSyncingRef.current = false;
 			}
@@ -528,8 +522,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			cancelled = true;
 			window.clearInterval(timer);
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [token, webAudioMode, streamTarget]);
+	}, [token]);
 
 	const sendWebStreamControl = async (action: string, values: Record<string, unknown> = {}) => {
 		if (!token) throw new Error("Please log in to control browser audio");
@@ -547,138 +540,77 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		return result;
 	};
 
+	const switchToVoiceOutput = async () => {
+		setWebAudioStatus("Connecting the player to Discord voice…");
+		setWebAudioError(null);
+		try {
+			const response = await fetch(apiUrl("/api/stream/output"), {
+				method: "POST",
+				headers: streamHeaders(),
+				body: JSON.stringify({ mode: "voice" }),
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || `Voice output failed (${response.status})`);
+			await webAudioClient.current?.disconnect().catch(() => {});
+			webAudioModeRef.current = false;
+			setWebAudioMode(false);
+			setWebStreamRunning(false);
+			webStreamSessionIdRef.current = null;
+			setAttachedPlayerId(null);
+			webStreamSharesDiscordPlayerRef.current = false;
+			webStreamMirrorsVoiceRef.current = false;
+			setStats(null);
+			void refreshPlayersInfo();
+			setWebAudioStatus(`Playing in Discord voice${result.channel?.name ? `: ${result.channel.name}` : ""}`);
+			return true;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Could not switch to Discord voice";
+			setWebAudioError(message);
+			setWebAudioStatus("Output switch failed");
+			return false;
+		}
+	};
+
+	const switchToBrowserOutput = async () => {
+		setWebAudioStatus("Switching playback to browser…");
+		setWebAudioError(null);
+		try {
+			if (!token) throw new Error("Please log in to use browser audio.");
+			const client = getWebAudioClient();
+			if (client.state === "disconnected") {
+				await client.connect({ gatewayUrl: streamWsUrl, token, nextPublisher: true });
+			}
+			const response = await fetch(apiUrl("/api/stream/output"), {
+				method: "POST",
+				headers: streamHeaders(),
+				body: JSON.stringify({ mode: "web" }),
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || `Browser output failed (${response.status})`);
+			webAudioModeRef.current = true;
+			setWebAudioMode(true);
+			setWebStreamRunning(true);
+			webStreamSessionIdRef.current = result.sessionId;
+			webStreamSharesDiscordPlayerRef.current = false;
+			setAttachedPlayerId(result.playerId ?? null);
+			void refreshPlayersInfo();
+			setWebAudioStatus("Playing in browser");
+			return true;
+		} catch (error) {
+			await webAudioClient.current?.disconnect().catch(() => {});
+			const message = error instanceof Error ? error.message : "Could not switch to browser audio";
+			setWebAudioError(message);
+			setWebAudioStatus("Output switch failed");
+			return false;
+		}
+	};
+
 	const switchOutputMode = async () => {
-		if (webAudioMode && webStreamActiveRef.current) {
-			if (webStreamSharesDiscordPlayerRef.current) {
-				setWebAudioStatus("Returning to Discord voice playback…");
-				setWebAudioError(null);
-				try {
-					const response = await fetch(apiUrl("/api/stream/output"), {
-						method: "POST",
-						headers: {
-							Authorization: `Bearer ${token}`,
-							"Content-Type": "application/json",
-							"ngrok-skip-browser-warning": "true",
-						},
-						body: JSON.stringify({ mode: "voice" }),
-					});
-					const result = await response.json();
-					if (!response.ok) throw new Error(result.error || `Voice output failed (${response.status})`);
-					await webAudioClient.current?.disconnect();
-					webAudioModeRef.current = false;
-					setWebAudioMode(false);
-					setWebStreamRunning(false);
-					webStreamSessionIdRef.current = null;
-					setAttachedPlayerId(null);
-					webStreamSharesDiscordPlayerRef.current = false;
-					setStats(null);
-					setWebAudioStatus("Returned to Discord voice playback");
-				} catch (error) {
-					const message = error instanceof Error ? error.message : "Could not return to Discord voice playback";
-					setWebAudioError(message);
-					setWebAudioStatus("Output switch failed");
-				}
-				return;
-			}
-			if (webStreamMirrorsVoiceRef.current) {
-				setWebAudioStatus("Returning to Discord voice playback…");
-				setWebAudioError(null);
-				try {
-					await sendWebStreamControl("stop");
-					await webAudioClient.current?.disconnect();
-					webAudioModeRef.current = false;
-					setWebAudioMode(false);
-					setWebStreamRunning(false);
-					webStreamSessionIdRef.current = null;
-					setAttachedPlayerId(null);
-					webStreamMirrorsVoiceRef.current = false;
-					webStreamSharesDiscordPlayerRef.current = false;
-					setStats(null);
-					setWebAudioStatus("Returned to Discord voice playback");
-				} catch (error) {
-					const message = error instanceof Error ? error.message : "Could not return to Discord voice playback";
-					setWebAudioError(message);
-					setWebAudioStatus("Output switch failed");
-				}
-				return;
-			}
-
-			setWebAudioStatus("Connecting the player to Discord voice…");
-			setWebAudioError(null);
-			try {
-				const response = await fetch(apiUrl("/api/stream/output"), {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${token}`,
-						"Content-Type": "application/json",
-						"ngrok-skip-browser-warning": "true",
-					},
-					body: JSON.stringify({ mode: "voice" }),
-				});
-				const result = await response.json();
-				if (!response.ok) throw new Error(result.error || `Voice output failed (${response.status})`);
-				await webAudioClient.current?.disconnect();
-				webAudioModeRef.current = false;
-				setWebAudioMode(false);
-				setWebAudioStatus(`Playing in Discord voice${result.channel?.name ? `: ${result.channel.name}` : ""}`);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : "Could not switch to Discord voice";
-				setWebAudioError(message);
-				setWebAudioStatus("Output switch failed");
-			}
-			return;
+		if (webAudioMode) {
+			await switchToVoiceOutput();
+		} else {
+			await switchToBrowserOutput();
 		}
-
-		if (!webAudioMode && webStreamActiveRef.current && webStreamSessionIdRef.current) {
-			setWebAudioStatus("Switching playback to browser…");
-			setWebAudioError(null);
-			try {
-				if (!token) throw new Error("Please log in to use browser audio.");
-				const client = getWebAudioClient();
-				await client.connect({
-					gatewayUrl: streamWsUrl,
-					token,
-					sessionId: webStreamSessionIdRef.current,
-				});
-				const response = await fetch(apiUrl("/api/stream/output"), {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${token}`,
-						"Content-Type": "application/json",
-						"ngrok-skip-browser-warning": "true",
-					},
-					body: JSON.stringify({ mode: "web" }),
-				});
-				const result = await response.json();
-				if (!response.ok) throw new Error(result.error || `Browser output failed (${response.status})`);
-				webAudioModeRef.current = true;
-				setWebAudioMode(true);
-				setAttachedPlayerId(result.playerId ?? null);
-				void refreshPlayersInfo();
-				setWebAudioStatus("Playing in browser");
-			} catch (error) {
-				await webAudioClient.current?.disconnect().catch(() => {});
-				const message = error instanceof Error ? error.message : "Could not switch to browser audio";
-				setWebAudioError(message);
-				setWebAudioStatus("Output switch failed");
-			}
-			return;
-		}
-
-		if (!webAudioMode) {
-			// A Discord player is already running: register the browser on that same player. Replaying
-			// the current track here would add it to the queue a second time.
-			if (streamTarget !== "browser" && (await attachToDiscordPlayer(false))) return;
-			if (stats?.track?.url) {
-				await playOnWeb(stats.track.url, stats.timestamp, true);
-				return;
-			}
-		}
-
-		const nextMode = !webAudioMode;
-		webAudioModeRef.current = nextMode;
-		setWebAudioMode(nextMode);
-		setStats(null);
 	};
 
 	// Marks the switch as in flight so the auto-attach poll can't re-register the browser output
@@ -1115,7 +1047,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	const sendCommand = (event: string, data: any = {}) => {
-		if (webAudioModeRef.current || webStreamActiveRef.current) {
+		if (webAudioModeRef.current) {
 			if (!webStreamActiveRef.current) {
 				setWebAudioError("Start browser playback by selecting a track from search results.");
 				return;
