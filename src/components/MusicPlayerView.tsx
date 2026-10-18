@@ -665,9 +665,14 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			return;
 		}
 
-		if (!webAudioMode && stats?.track?.url) {
-			await playOnWeb(stats.track.url, stats.timestamp, true);
-			return;
+		if (!webAudioMode) {
+			// A Discord player is already running: register the browser on that same player. Replaying
+			// the current track here would add it to the queue a second time.
+			if (streamTarget !== "browser" && (await attachToDiscordPlayer(false))) return;
+			if (stats?.track?.url) {
+				await playOnWeb(stats.track.url, stats.timestamp, true);
+				return;
+			}
 		}
 
 		const nextMode = !webAudioMode;
@@ -706,7 +711,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				lockStatus: false,
 				track: state.currentTrack,
 				queue: state.queue ?? [],
-				related: [],
+				related: Array.isArray(state.related) ? state.related : [],
 			});
 			setVolume(state.volume ?? 0);
 		};
