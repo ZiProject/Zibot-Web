@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { WebAudioClient } from "@ziplayer/client";
-import { apiUrl, getWsUrl, isDiscordActivity, proxyImage, useIsMinimized } from "../services/discordActivity";
+import { apiUrl, getWsUrl, isDiscordActivity, proxyImage, useIsMinimized, videoStreamUrl } from "../services/discordActivity";
 import {
 	Play,
 	Pause,
@@ -25,6 +25,13 @@ import {
 	CircleAlert,
 	X,
 	Headphones,
+	Video,
+	VideoOff,
+	Film,
+	Eye,
+	EyeOff,
+	Maximize,
+	Minimize,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { BotInfo } from "../services/discordActivity";
@@ -147,6 +154,46 @@ function MarqueeText({ text, className = "" }: { text: string; className?: strin
 	);
 }
 
+function VideoCanvas({ videoRef }: { videoRef: React.RefObject<HTMLVideoElement | null> }) {
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+	useEffect(() => {
+		let animId: number;
+		const canvas = canvasRef.current;
+		if (!canvas) return;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+
+		const render = () => {
+			const video = videoRef.current;
+			if (video && video.readyState >= 2) {
+				if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+					if (video.videoWidth && video.videoHeight) {
+						canvas.width = video.videoWidth;
+						canvas.height = video.videoHeight;
+					}
+				}
+				if (canvas.width > 0 && canvas.height > 0) {
+					try {
+						ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+					} catch {}
+				}
+			}
+			animId = requestAnimationFrame(render);
+		};
+
+		animId = requestAnimationFrame(render);
+		return () => cancelAnimationFrame(animId);
+	}, [videoRef]);
+
+	return (
+		<canvas
+			ref={canvasRef}
+			className='absolute inset-0 z-10 h-full w-full object-cover rounded-xl pointer-events-none'
+		/>
+	);
+}
+
 export function MusicPlayerView({ botInfo }: HeroProps) {
 	const { t } = useLanguage();
 	const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -183,7 +230,320 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const webStreamSharesDiscordPlayerRef = useRef(false);
 	const webAudioModeRef = useRef(false);
 
-	// Thêm hằng số này bên ngoài Component hoặc trong component
+	const [videoBgEnabled, setVideoBgEnabled] = useState(() => {
+		try {
+			return localStorage.getItem("ziji-video-bg") !== "false";
+		} catch {
+			return true;
+		}
+	});
+	const [videoCanvasMode, setVideoCanvasMode] = useState(false);
+	const [videoError, setVideoError] = useState(false);
+	const [videoLoaded, setVideoLoaded] = useState(false);
+	const [miniVideoLoaded, setMiniVideoLoaded] = useState(false);
+	const videoBgRef = useRef<HTMLVideoElement | null>(null);
+	const miniVideoRef = useRef<HTMLVideoElement | null>(null);
+	const lastKnownThumbnailRef = useRef<string | null>(null);
+	const lastKnownTrackRef = useRef<Track | null>(null);
+
+	if (stats?.track?.thumbnail) {
+		lastKnownThumbnailRef.current = stats.track.thumbnail;
+	}
+	if (stats?.track) {
+		lastKnownTrackRef.current = stats.track;
+	}
+
+	const activeThumbnail = stats?.track?.thumbnail || lastKnownThumbnailRef.current || botInfo?.avatars || null;
+
+	const [bgBlur, setBgBlur] = useState<number>(() => {
+		try {
+			const saved = localStorage.getItem("ziji-bg-blur");
+			return saved !== null ? Math.min(30, Math.max(0, Number(saved))) : 8;
+		} catch {
+			return 8;
+		}
+	});
+
+	const [bgOpacity, setBgOpacity] = useState<number>(() => {
+		try {
+			const saved = localStorage.getItem("ziji-bg-opacity");
+			return saved !== null ? Math.min(100, Math.max(0, Number(saved))) : 35;
+		} catch {
+			return 35;
+		}
+	});
+
+	const [guiOpacity, setGuiOpacity] = useState<number>(() => {
+		try {
+			const saved = localStorage.getItem("ziji-gui-opacity");
+			return saved !== null ? Math.min(100, Math.max(10, Number(saved))) : 85;
+		} catch {
+			return 85;
+		}
+	});
+
+	const [guiBlur, setGuiBlur] = useState<number>(() => {
+		try {
+			const saved = localStorage.getItem("ziji-gui-blur");
+			return saved !== null ? Math.min(30, Math.max(0, Number(saved))) : 16;
+		} catch {
+			return 16;
+		}
+	});
+
+	const [showVisualSettings, setShowVisualSettings] = useState(false);
+
+	const updateBgBlur = (val: number) => {
+		const clamped = Math.min(30, Math.max(0, val));
+		setBgBlur(clamped);
+		try {
+			localStorage.setItem("ziji-bg-blur", String(clamped));
+		} catch {}
+	};
+
+	const updateBgOpacity = (val: number) => {
+		const clamped = Math.min(100, Math.max(0, val));
+		setBgOpacity(clamped);
+		try {
+			localStorage.setItem("ziji-bg-opacity", String(clamped));
+		} catch {}
+	};
+
+	const updateGuiOpacity = (val: number) => {
+		const clamped = Math.min(100, Math.max(10, val));
+		setGuiOpacity(clamped);
+		try {
+			localStorage.setItem("ziji-gui-opacity", String(clamped));
+		} catch {}
+	};
+
+	const updateGuiBlur = (val: number) => {
+		const clamped = Math.min(30, Math.max(0, val));
+		setGuiBlur(clamped);
+		try {
+			localStorage.setItem("ziji-gui-blur", String(clamped));
+		} catch {}
+	};
+
+	const resetVisualSettings = () => {
+		updateBgBlur(8);
+		updateBgOpacity(35);
+		updateGuiOpacity(85);
+		updateGuiBlur(16);
+	};
+
+	const applyPreset = (preset: "default" | "cinema" | "glass" | "focus") => {
+		switch (preset) {
+			case "cinema":
+				updateBgOpacity(85);
+				updateBgBlur(0);
+				updateGuiOpacity(35);
+				updateGuiBlur(8);
+				break;
+			case "glass":
+				updateBgOpacity(55);
+				updateBgBlur(6);
+				updateGuiOpacity(60);
+				updateGuiBlur(20);
+				break;
+			case "focus":
+				updateBgOpacity(15);
+				updateBgBlur(16);
+				updateGuiOpacity(95);
+				updateGuiBlur(20);
+				break;
+			case "default":
+			default:
+				resetVisualSettings();
+				break;
+		}
+	};
+
+	const [hideGui, setHideGui] = useState<boolean>(false);
+	const [showZenControls, setShowZenControls] = useState<boolean>(true);
+	const zenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const [hideScrollbar, setHideScrollbar] = useState<boolean>(() => {
+		try {
+			return localStorage.getItem("ziji-hide-scrollbar") !== "false";
+		} catch {
+			return true;
+		}
+	});
+
+	const updateHideScrollbar = (val: boolean) => {
+		setHideScrollbar(val);
+		try {
+			localStorage.setItem("ziji-hide-scrollbar", String(val));
+		} catch {}
+	};
+
+	const [isFullscreen, setIsFullscreen] = useState(false);
+
+	useEffect(() => {
+		const handleFullscreenChange = () => {
+			setIsFullscreen(Boolean(document.fullscreenElement));
+		};
+		document.addEventListener("fullscreenchange", handleFullscreenChange);
+		return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+	}, []);
+
+	const toggleFullscreen = () => {
+		if (!document.fullscreenElement) {
+			document.documentElement.requestFullscreen().catch(() => {});
+		} else {
+			document.exitFullscreen().catch(() => {});
+		}
+	};
+
+	const triggerZenActivity = () => {
+		setShowZenControls(true);
+		if (zenTimeoutRef.current) clearTimeout(zenTimeoutRef.current);
+		zenTimeoutRef.current = setTimeout(() => {
+			setShowZenControls(false);
+		}, 3500);
+	};
+
+	useEffect(() => {
+		if (!hideGui) {
+			setShowZenControls(true);
+			if (zenTimeoutRef.current) clearTimeout(zenTimeoutRef.current);
+			return;
+		}
+
+		triggerZenActivity();
+		const onMouseMove = () => triggerZenActivity();
+		const onTouchStart = () => triggerZenActivity();
+
+		window.addEventListener("mousemove", onMouseMove);
+		window.addEventListener("touchstart", onTouchStart);
+
+		return () => {
+			window.removeEventListener("mousemove", onMouseMove);
+			window.removeEventListener("touchstart", onTouchStart);
+			if (zenTimeoutRef.current) clearTimeout(zenTimeoutRef.current);
+		};
+	}, [hideGui]);
+
+	useEffect(() => {
+		const handleGlobalKeyDown = (e: KeyboardEvent) => {
+			const target = e.target as HTMLElement | null;
+			if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+				return;
+			}
+
+			if (e.key === "Escape") {
+				if (showVisualSettings) {
+					setShowVisualSettings(false);
+				} else if (hideGui) {
+					setHideGui(false);
+				}
+			} else if (e.key.toLowerCase() === "h") {
+				setHideGui((prev) => !prev);
+			}
+		};
+
+		window.addEventListener("keydown", handleGlobalKeyDown);
+		return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+	}, [showVisualSettings, hideGui]);
+
+	useEffect(() => {
+		if (hideGui) {
+			document.body.classList.add("cyber-zen-mode");
+		} else {
+			document.body.classList.remove("cyber-zen-mode");
+		}
+		return () => {
+			document.body.classList.remove("cyber-zen-mode");
+		};
+	}, [hideGui]);
+
+	const currentTrackUrl = stats?.track?.url || null;
+	const currentTrackTitle = stats?.track?.title || null;
+	const currentVideoUrl = stats?.track ? videoStreamUrl(stats.track) : null;
+
+	useEffect(() => {
+		setVideoError(false);
+		setVideoLoaded(false);
+		setMiniVideoLoaded(false);
+		initialSyncedTrackRef.current = null;
+		lastVideoSeekRef.current = 0;
+	}, [currentTrackUrl, currentTrackTitle]);
+
+	useEffect(() => {
+		const isPaused = Boolean(stats?.paused);
+		const updateVideoPlayback = (v: HTMLVideoElement | null) => {
+			if (!v) return;
+			if (isPaused) {
+				v.pause();
+			} else {
+				v.play().catch(() => {});
+			}
+		};
+		updateVideoPlayback(videoBgRef.current);
+		updateVideoPlayback(miniVideoRef.current);
+	}, [stats?.paused]);
+
+	const lastVideoSeekRef = useRef(0);
+	const initialSyncedTrackRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		if (stats?.timestamp === undefined || stats?.timestamp === null) return;
+		const targetSec = stats.timestamp / 1000;
+		const trackKey = stats?.track?.url || stats?.track?.title || "";
+
+		const isBuffered = (video: HTMLVideoElement, time: number): boolean => {
+			try {
+				const b = video.buffered;
+				for (let i = 0; i < b.length; i++) {
+					if (time >= b.start(i) && time <= b.end(i)) return true;
+				}
+			} catch {}
+			return false;
+		};
+
+		const syncVideoElement = (v: HTMLVideoElement | null) => {
+			if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+			if (v.seeking || v.readyState < 2) return;
+
+			// Handle looping if video is shorter than track duration
+			const effectiveTarget = targetSec % v.duration;
+			const delta = Math.abs(v.currentTime - effectiveTarget);
+
+			const isInitialSync = initialSyncedTrackRef.current !== trackKey;
+			const now = Date.now();
+
+			if (isInitialSync) {
+				initialSyncedTrackRef.current = trackKey;
+				if (targetSec < 5) {
+					v.playbackRate = 1.0;
+					return;
+				}
+			}
+
+			// If target is in buffered cache and delta is noticeable, seek directly from memory
+			if (delta > 3.0 && isBuffered(v, effectiveTarget) && now - lastVideoSeekRef.current > 3000) {
+				lastVideoSeekRef.current = now;
+				try {
+					v.currentTime = effectiveTarget;
+				} catch {}
+				v.playbackRate = 1.0;
+				return;
+			}
+
+			// Nudge playback rate gently to drift into sync without firing network byte range requests
+			if (delta > 1.5) {
+				v.playbackRate = v.currentTime < effectiveTarget ? 1.08 : 0.92;
+			} else {
+				v.playbackRate = 1.0;
+			}
+		};
+
+		syncVideoElement(videoBgRef.current);
+		syncVideoElement(miniVideoRef.current);
+	}, [stats?.timestamp, stats?.track?.url, stats?.track?.title]);
+
+	// Silent sound data URI for background media control
 	const SILENT_SOUND_URL =
 		"data:audio/wav;base64,UklGRqAWAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YV4WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 	const parseDuration = (val: string | number): number => {
@@ -243,6 +603,8 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const queueSectionRef = useRef<HTMLDivElement>(null);
 	const [activeTrackAction, setActiveTrackAction] = useState<string | null>(null);
 	const [lyrics, setLyrics] = useState<string | null>(null);
+	const [romanizedLyrics, setRomanizedLyrics] = useState<string | null>(null);
+	const [showRomanized, setShowRomanized] = useState(false);
 	const [showLyrics, setShowLyrics] = useState(false);
 	const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
@@ -259,7 +621,6 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const enterWebAudioMode = () => {
 		webAudioModeRef.current = true;
 		setWebAudioMode(true);
-		setStats(null);
 	};
 
 	const getWebAudioClient = () => {
@@ -298,13 +659,29 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		return client;
 	};
 
-	const playOnWeb = async (query: string, positionMs = 0, mirrorsVoice = false) => {
+	const playOnWeb = async (query: string, positionMs = 0, mirrorsVoice = false, trackOpt?: Track) => {
 		if (!token) {
 			setWebAudioError("Please log in to use browser audio.");
 			return;
 		}
 		setWebAudioError(null);
 		setWebAudioStatus("Connecting browser audio…");
+		if (trackOpt) {
+			setStats((prev) => ({
+				event: "statistics",
+				timestamp: positionMs || 0,
+				listeners: prev?.listeners ?? 0,
+				tracks: prev?.tracks ? Math.max(1, prev.tracks) : 1,
+				volume: prev?.volume ?? 50,
+				paused: false,
+				repeatMode: prev?.repeatMode ?? "off",
+				autoPlay: prev?.autoPlay ?? false,
+				lockStatus: false,
+				track: trackOpt,
+				queue: prev?.queue ?? [],
+				related: prev?.related ?? [],
+			}));
+		}
 		try {
 			const client = getWebAudioClient();
 			if (client.state === "disconnected") {
@@ -356,8 +733,12 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	const refreshPlayersInfo = async (): Promise<StreamPlayersInfo | null> => {
 		if (!token) return null;
 		try {
-			const response = await fetch(apiUrl("/api/stream/players"), {
-				headers: { Authorization: `Bearer ${token}`, "ngrok-skip-browser-warning": "true" },
+			const response = await fetch(apiUrl("/api/stream/players?sse=false"), {
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"ngrok-skip-browser-warning": "true",
+					Accept: "application/json",
+				},
 			});
 			if (!response.ok) return null;
 			const info = (await response.json()) as StreamPlayersInfo;
@@ -503,24 +884,88 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		</div>
 	);
 
-	// Periodically refresh players info without force-attaching WebAudio to active Discord voice
+	// Stream players info via Server-Sent Events (SSE)
 	useEffect(() => {
 		if (!token) return;
+		const controller = new AbortController();
 		let cancelled = false;
-		const sync = async () => {
-			if (cancelled || playersSyncingRef.current || outputBusyRef.current) return;
-			playersSyncingRef.current = true;
+		let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
+
+		const connectPlayersStream = async () => {
+			let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 			try {
-				await refreshPlayersInfo();
+				const response = await fetch(apiUrl("/api/stream/players"), {
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"ngrok-skip-browser-warning": "true",
+						Accept: "text/event-stream",
+					},
+					signal: controller.signal,
+				});
+				if (!response.ok) {
+					void refreshPlayersInfo();
+					return;
+				}
+				if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+					const info = (await response.json()) as StreamPlayersInfo;
+					if (!cancelled) setPlayersInfo(info);
+					return;
+				}
+
+				reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+
+				const consumeEvent = (block: string) => {
+					let eventName = "message";
+					const data: string[] = [];
+					for (const line of block.split(/\r\n|\r|\n/)) {
+						if (line.startsWith(":")) continue;
+						const separator = line.indexOf(":");
+						const field = separator === -1 ? line : line.slice(0, separator);
+						const value = separator === -1 ? "" : line.slice(separator + 1).replace(/^ /, "");
+						if (field === "event") eventName = value;
+						else if (field === "data") data.push(value);
+					}
+					if (!data.length || cancelled) return;
+					try {
+						const payload = JSON.parse(data.join("\n")) as StreamPlayersInfo;
+						if (eventName === "stream-players" || eventName === "message") {
+							setPlayersInfo(payload);
+						}
+					} catch (err) {
+						console.error("Could not process stream players event:", err);
+					}
+				};
+
+				while (!cancelled) {
+					const { value, done } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					let boundary = buffer.search(/\r?\n\r?\n/);
+					while (boundary !== -1) {
+						const block = buffer.slice(0, boundary);
+						const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0].length ?? 2;
+						buffer = buffer.slice(boundary + separator);
+						consumeEvent(block);
+						boundary = buffer.search(/\r?\n\r?\n/);
+					}
+				}
+			} catch (err) {
+				if (cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
+				console.warn("Players stream disconnected, reconnecting in 3s...", err);
 			} finally {
-				playersSyncingRef.current = false;
+				reader?.releaseLock();
+				if (!cancelled) reconnectTimeout = setTimeout(connectPlayersStream, 3000);
 			}
 		};
-		void sync();
-		const timer = window.setInterval(() => void sync(), 5000);
+
+		void connectPlayersStream();
+
 		return () => {
 			cancelled = true;
-			window.clearInterval(timer);
+			clearTimeout(reconnectTimeout);
+			controller.abort();
 		};
 	}, [token]);
 
@@ -559,7 +1004,6 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			setAttachedPlayerId(null);
 			webStreamSharesDiscordPlayerRef.current = false;
 			webStreamMirrorsVoiceRef.current = false;
-			setStats(null);
 			void refreshPlayersInfo();
 			setWebAudioStatus(`Playing in Discord voice${result.channel?.name ? `: ${result.channel.name}` : ""}`);
 			return true;
@@ -783,12 +1227,6 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	useEffect(() => {
-		if (webAudioModeRef.current) {
-			setConnected(false);
-			setAuthenticated(false);
-			return;
-		}
-
 		if (!token) {
 			setError("Please login to access the music player.");
 			return;
@@ -881,40 +1319,96 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			socket?.close();
 		};
-	}, [wsUrl, token, webAudioMode]);
+	}, [wsUrl, token]);
 
 	// Fetch lyrics when track changes
 	useEffect(() => {
-		if (stats?.track?.title) {
-			fetch(`${baseUrl}/music/lyrics?q=${encodeURIComponent(stats.track.title)}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					"ngrok-skip-browser-warning": "true",
-				},
-			})
-				.then((res) => res.json())
-				.then((data) => setLyrics(data?.lyrics?.text || "Lyrics not found"))
-				.catch(() => setLyrics("Lyrics error"));
+		if (!stats?.track?.title) {
+			setLyrics(null);
+			setRomanizedLyrics(null);
+			return;
 		}
-	}, [stats?.track?.title, baseUrl, token]);
-	// Thêm vào trong component MusicPlayerView
+
+		// If stats.track already came with lyrics from serializeTrack / metadata:
+		const trackWithLyrics = stats.track as typeof stats.track & {
+			lyrics?: { text?: string; synced?: string; romanized?: string } | null;
+		};
+		if (trackWithLyrics.lyrics?.text || trackWithLyrics.lyrics?.synced) {
+			const directText =
+				trackWithLyrics.lyrics.text || trackWithLyrics.lyrics.synced?.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]\s?/g, "");
+			if (directText) {
+				setLyrics(directText);
+				setRomanizedLyrics(trackWithLyrics.lyrics.romanized || null);
+				return;
+			}
+		}
+
+		setLyrics(null);
+		setRomanizedLyrics(null);
+
+		const params = new URLSearchParams();
+		params.set("q", stats.track.title);
+		if (stats.track.author) {
+			params.set("artist", stats.track.author);
+		}
+		if (stats.track.duration) {
+			params.set("duration", String(stats.track.duration));
+		}
+
+		let active = true;
+		fetch(`${baseUrl}/music/lyrics?${params.toString()}`, {
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"ngrok-skip-browser-warning": "true",
+			},
+		})
+			.then(async (res) => {
+				if (!res.ok && res.status !== 404) {
+					throw new Error(`HTTP ${res.status}`);
+				}
+				return res.json();
+			})
+			.then((data) => {
+				if (!active) return;
+				const plainFromSynced = data?.synced?.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]\s?/g, "");
+				const extracted =
+					data?.text ||
+					data?.lyrics?.text ||
+					plainFromSynced ||
+					data?.lyrics?.synced?.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]\s?/g, "") ||
+					(typeof data?.lyrics === "string" ? data.lyrics : null);
+
+				setLyrics(extracted || "Lyrics not found");
+				setRomanizedLyrics(data?.lyrics_romanization || data?.lyrics?.romanized || null);
+			})
+			.catch((err) => {
+				if (!active) return;
+				console.error("[MusicPlayerView] Failed to fetch lyrics:", err);
+				setLyrics("Lyrics not found");
+			});
+
+		return () => {
+			active = false;
+		};
+	}, [stats?.track?.title, stats?.track?.author, stats?.track?.duration, baseUrl, token]);
+	// Sync navigator.mediaSession state and action handlers
 	useEffect(() => {
 		if (!("mediaSession" in navigator) || !stats?.track) return;
 
 		const { track, paused } = stats;
 
-		// Kích hoạt Audio "im lặng" để trình duyệt hiện Media Control
+		// Trigger silent audio so the browser activates Media Session controls
 		if (audioRef.current) {
 			if (!paused) {
 				audioRef.current.play().catch(() => {
-					console.log("Cần tương tác người dùng để kích hoạt Media Session");
+					console.log("User interaction required to activate Media Session");
 				});
 			} else {
 				audioRef.current.pause();
 			}
 		}
 
-		// 1. Cập nhật Metadata
+		// 1. Update Metadata
 		navigator.mediaSession.metadata = new MediaMetadata({
 			title: track.title,
 			artist: track.author || "Unknown artist",
@@ -933,10 +1427,10 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			],
 		});
 
-		// 2. Trạng thái Playback
+		// 2. Playback state
 		navigator.mediaSession.playbackState = paused ? "paused" : "playing";
 
-		// 3. Đăng ký Action Handlers
+		// 3. Register Action Handlers
 		const actions: [MediaSessionAction, () => void][] = [
 			["play", () => sendCommand("pause")],
 			["pause", () => sendCommand("pause")],
@@ -964,12 +1458,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			try {
 				navigator.mediaSession.setActionHandler(action, handler);
 			} catch (error) {
-				console.warn(`Action ${action} không được hỗ trợ`);
+				console.warn(`Action ${action} is not supported`);
 			}
 		});
 
-		// 4. Cập nhật vị trí thanh progress (Position State)
-		// Cần bọc trong try-catch vì thông số duration/position phải hợp lệ
+		// 4. Update Position State
 		try {
 			const duration = parseDuration(track.duration) / 1000;
 			const position = (stats.timestamp || 0) / 1000;
@@ -982,7 +1475,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 				});
 			}
 		} catch (e) {
-			console.error("Lỗi cập nhật PositionState:", e);
+			console.error("Error updating PositionState:", e);
 		}
 	}, [stats?.track, stats?.paused, stats?.timestamp]);
 	const handleSearch = async () => {
@@ -1029,8 +1522,34 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		try {
 			if (webAudioMode) {
 				if (queueNext) return;
-				await playOnWeb(track.url || track.title);
+				await playOnWeb(track.url || track.title, 0, false, track);
 			} else {
+				if (!stats?.track) {
+					setStats({
+						event: "statistics",
+						timestamp: 0,
+						listeners: 0,
+						tracks: 1,
+						volume: volume || 50,
+						paused: false,
+						repeatMode: "off",
+						autoPlay: false,
+						lockStatus: false,
+						track,
+						queue: [],
+						related: [],
+					});
+				} else {
+					setStats((prev) =>
+						prev ?
+							{
+								...prev,
+								queue: queueNext ? [track, ...prev.queue] : [...prev.queue, track],
+								tracks: prev.tracks + 1,
+							}
+						:	null,
+					);
+				}
 				sendCommand(queueNext ? "Playnext" : "play", {
 					trackUrl: track.url,
 					...(queueNext ? { TrackPosition: 1 } : {}),
@@ -1129,7 +1648,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			);
 		}
 
-		if (!connected && !webAudioMode) {
+		if (!stats && !connected && !webAudioMode) {
 			return (
 				<div className='fixed inset-0 bg-[#050505] flex flex-col items-center justify-center gap-3 p-4 text-center select-none'>
 					<div className='w-8 h-8 border-2 border-white/10 border-t-discord rounded-full animate-spin'></div>
@@ -1143,7 +1662,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			);
 		}
 
-		if (!isVoiceConnected && !webAudioMode) {
+		if (!stats && !isVoiceConnected && !webAudioMode) {
 			return (
 				<div className='fixed inset-0 bg-[#050505] flex flex-col items-center justify-center p-4 text-center select-none'>
 					<Music className='w-8 h-8 text-zinc-500 mb-2 animate-pulse' />
@@ -1166,20 +1685,20 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 		return (
 			<div className='fixed inset-0 bg-[#050505] flex flex-col overflow-hidden select-none'>
-				{/* Thumbnail Container */}
+				{/* Thumbnail / Video Container */}
 				<div className='relative flex-grow w-full overflow-hidden bg-black flex items-center justify-center'>
-					{stats?.track?.thumbnail ?
+					{activeThumbnail ?
 						<>
 							{/* Blurred Background for aesthetic glow */}
 							<img
-								src={proxyImage(stats.track.thumbnail)}
+								src={proxyImage(activeThumbnail)}
 								alt=''
 								className='absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110'
 							/>
 							{/* Sharp Image */}
 							<img
-								src={proxyImage(stats.track.thumbnail)}
-								alt={stats.track.title}
+								src={proxyImage(activeThumbnail)}
+								alt={stats?.track?.title || ""}
 								className='relative max-w-full max-h-full object-contain z-10 shadow-2xl rounded-lg p-2'
 							/>
 						</>
@@ -1188,6 +1707,30 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							<span className='text-xs font-bold tracking-widest uppercase'>No Track</span>
 						</div>
 					}
+					{videoBgEnabled && currentVideoUrl && !videoError && (
+						<div
+							className={`absolute inset-0 z-20 transition-opacity duration-500 ${miniVideoLoaded ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+							<video
+								ref={miniVideoRef}
+								key={`mini-${currentVideoUrl}`}
+								src={currentVideoUrl}
+								autoPlay
+								loop
+								muted
+								playsInline
+								onLoadedData={() => setMiniVideoLoaded(true)}
+								onCanPlay={() => setMiniVideoLoaded(true)}
+								onError={(e) => {
+									const err = e.currentTarget.error;
+									if (!err || err.code === MediaError.MEDIA_ERR_ABORTED) return;
+									setVideoError(true);
+									setMiniVideoLoaded(false);
+								}}
+								className='absolute inset-0 w-full h-full object-cover'
+							/>
+							<div className='absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none' />
+						</div>
+					)}
 				</div>
 
 				{/* Controls Bar at bottom */}
@@ -1291,7 +1834,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		);
 	}
 
-	if (!connected && !webAudioMode) {
+	if (!stats && !connected && !webAudioMode) {
 		return (
 			<div className='flex h-[calc(100vh-64px)] flex-col items-center justify-center gap-4'>
 				<div className='w-12 h-12 border-4 border-white/10 border-t-discord rounded-full animate-spin'></div>
@@ -1305,7 +1848,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		);
 	}
 
-	if (!isVoiceConnected && !webAudioMode) {
+	if (!stats && !isVoiceConnected && !webAudioMode) {
 		return (
 			<div className='fixed inset-0 top-16 bg-[#09090b] flex items-center justify-center p-6 overflow-hidden select-none'>
 				{/* Animated Background Ambient Glows */}
@@ -1353,12 +1896,89 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	}
 
 	return (
-		<div className='cyber-player fixed inset-0 top-16 flex overflow-hidden select-none'>
+		<div
+			className={`cyber-player fixed inset-0 ${hideGui ? "top-0 z-[100] cyber-player-zen" : "top-16"} ${hideScrollbar ? "cyber-hide-scrollbars" : ""} flex overflow-hidden select-none`}
+			style={
+				{
+					"--bg-video-opacity": `${bgOpacity / 100}`,
+					"--bg-video-blur": `${bgBlur}px`,
+					"--gui-opacity": `${guiOpacity / 100}`,
+					"--gui-blur": `${guiBlur}px`,
+				} as React.CSSProperties
+			}>
+			{/* Video Background Layer (Master Video Source) */}
+			{/* Artwork Ambient Base Background - Always rendered whenever a thumbnail is available */}
+			{activeThumbnail && (
+				<div className='pointer-events-none absolute inset-0 z-0 overflow-hidden'>
+					<img
+						src={proxyImage(activeThumbnail)}
+						alt=''
+						className='h-full w-full object-cover scale-110 transition-all duration-700'
+						style={{
+							opacity: hideGui ? 0.9 : (bgOpacity / 100) * 0.5,
+							filter: hideGui ? "blur(4px)" : `blur(${Math.max(16, bgBlur * 2.5)}px)`,
+						}}
+					/>
+					<div
+						className={`absolute inset-0 transition-all duration-500 ${hideGui ? "bg-black/40" : "bg-gradient-to-t from-[#080b10] via-[#080b10]/60 to-[#080b10]/80"}`}
+					/>
+				</div>
+			)}
+			{/* Video Background Layer (Overlaid on top of artwork base, smoothly fading in when ready) */}
+			{(videoBgEnabled || videoCanvasMode) && currentVideoUrl && !videoError && (
+				<div
+					className={`pointer-events-none absolute inset-0 z-0 overflow-hidden transition-opacity duration-700 ${
+						videoBgEnabled && videoLoaded ? "opacity-100" : "opacity-0 -z-10"
+					}`}>
+					<video
+						ref={videoBgRef}
+						key={`bg-${currentVideoUrl}`}
+						src={currentVideoUrl}
+						crossOrigin='anonymous'
+						autoPlay
+						loop
+						muted
+						playsInline
+						onLoadedData={() => setVideoLoaded(true)}
+						onCanPlay={(e) => {
+							setVideoLoaded(true);
+							if (stats?.paused) {
+								e.currentTarget.pause();
+							} else {
+								e.currentTarget.play().catch(() => {});
+							}
+						}}
+						onError={(e) => {
+							const err = e.currentTarget.error;
+							if (!err || err.code === MediaError.MEDIA_ERR_ABORTED) return;
+							setVideoError(true);
+							setVideoLoaded(false);
+						}}
+						className={`h-full w-full object-cover transition-all duration-500 ${hideGui ? "scale-100" : "scale-105"}`}
+						style={{
+							opacity: hideGui ? 1 : bgOpacity / 100,
+							filter: hideGui ? "none" : `blur(${bgBlur}px)`,
+						}}
+					/>
+					<div
+						className='absolute inset-0 transition-opacity duration-500 pointer-events-none'
+						style={{
+							background:
+								hideGui ?
+									"linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 20%, transparent 80%, rgba(0, 0, 0, 0.5) 100%)"
+								:	`linear-gradient(to top, rgba(8, 11, 16, ${Math.max(0.12, 0.9 - (bgOpacity / 100) * 0.65)}), rgba(8, 11, 16, ${Math.max(0.05, 0.5 - (bgOpacity / 100) * 0.45)}), rgba(8, 11, 16, ${Math.max(0.12, 0.8 - (bgOpacity / 100) * 0.55)}))`,
+						}}
+					/>
+				</div>
+			)}
 			{/* Background Animated Ambient Blobs */}
 			<div className='pointer-events-none absolute left-1/3 top-10 h-80 w-80 rounded-full bg-cyan-400/10 blur-[120px]'></div>
 			<div className='pointer-events-none absolute bottom-10 right-1/4 h-80 w-80 rounded-full bg-fuchsia-500/10 blur-[120px]'></div>
 			{/* Sidebar - Desktop Only */}
-			<div className='relative z-10 hidden w-64 shrink-0 flex-col gap-8 border-r border-white/10 p-6 lg:flex'>
+			<div
+				className={`cyber-sidebar relative z-10 hidden w-64 shrink-0 flex-col gap-8 border-r border-white/10 p-6 lg:flex transition-all duration-500 ease-in-out ${
+					hideGui ? "opacity-0 -translate-x-full pointer-events-none" : "opacity-100 translate-x-0"
+				}`}>
 				<div className='flex items-center gap-3'>
 					<div className='flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/40 bg-cyan-300/10 shadow-[0_0_24px_rgba(34,211,238,0.2)]'>
 						<Music className='h-5 w-5 text-cyan-200' />
@@ -1378,11 +1998,16 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 				<nav className='space-y-1'>
 					{[
-						{ icon: LayoutGrid, label: "Home", active: searchState === "idle" && !searchQuery, onClick: clearSearch },
+						{
+							icon: LayoutGrid,
+							label: "Home",
+							active: searchState === "idle" && !searchQuery && !showVisualSettings,
+							onClick: clearSearch,
+						},
 						{
 							icon: Search,
 							label: "Search",
-							active: Boolean(searchQuery) || searchState !== "idle",
+							active: (Boolean(searchQuery) || searchState !== "idle") && !showVisualSettings,
 							onClick: () => searchInputRef.current?.focus(),
 						},
 						{
@@ -1393,6 +2018,18 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								if (searchState !== "idle") clearSearch();
 								window.setTimeout(() => queueSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
 							},
+						},
+						{
+							icon: EyeOff,
+							label: "Hide GUI (H)",
+							active: false,
+							onClick: () => setHideGui(true),
+						},
+						{
+							icon: SlidersHorizontal,
+							label: "Visual & Blur",
+							active: showVisualSettings,
+							onClick: () => setShowVisualSettings(true),
 						},
 					].map((item, idx) => (
 						<button
@@ -1425,7 +2062,10 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 			</div>
 
 			{/* Main Content Area: one fixed page. Only the list panel scrolls, so the layout never resizes. */}
-			<div className='relative z-10 flex min-h-0 min-w-0 flex-grow flex-col pb-20 md:pb-0'>
+			<div
+				className={`relative z-10 flex min-h-0 min-w-0 flex-grow flex-col pb-20 md:pb-0 transition-all duration-500 ease-in-out ${
+					hideGui ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"
+				}`}>
 				<div className='mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-3 p-4 md:gap-4 md:p-8'>
 					{/* Search Bar */}
 					<form
@@ -1497,7 +2137,7 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 						{webAudioMode && renderTargetPill()}
 					</div>
 
-					<div className='custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-gutter:stable]'>
+					<div className={`min-h-0 flex-1 overflow-y-auto pr-1 ${hideScrollbar ? "no-scrollbar" : "custom-scrollbar"}`}>
 						<div className='flex min-h-full flex-col'>
 							{/* Results or Queue */}
 							{searchState === "loading" ?
@@ -1603,6 +2243,34 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 														}
 													}}
 													className={`cyber-row group flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-300/60 md:gap-4 ${isCurrent ? "ring-1 ring-lime-300/30" : ""}`}>
+													<div className='flex shrink-0 items-center gap-1.5 md:gap-2'>
+														<button
+															type='button'
+															title='Play track'
+															aria-label={`Play ${track.title}`}
+															disabled={activeTrackAction === trackKey}
+															onClick={(event) => {
+																event.stopPropagation();
+																void handleTrackAction(track);
+															}}
+															className='cyber-action flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60'>
+															{activeTrackAction === trackKey ?
+																<LoaderCircle className='h-4 w-4 animate-spin' />
+															:	<Play className='h-4 w-4 fill-current' />}
+														</button>
+														{!webAudioMode && (
+															<button
+																type='button'
+																title='Play next'
+																onClick={(event) => {
+																	event.stopPropagation();
+																	void handleTrackAction(track, true);
+																}}
+																className='flex min-h-10 items-center rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-cyan-200/20 hover:bg-cyan-200/[0.06] active:scale-95'>
+																Next
+															</button>
+														)}
+													</div>
 													<img
 														src={proxyImage(track.thumbnail ?? undefined)}
 														alt=''
@@ -1628,34 +2296,6 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 																</span>
 															)}
 														</div>
-													</div>
-													<div className='flex shrink-0 gap-1 md:gap-2'>
-														<button
-															type='button'
-															title='Play track'
-															aria-label={`Play ${track.title}`}
-															disabled={activeTrackAction === trackKey}
-															onClick={(event) => {
-																event.stopPropagation();
-																void handleTrackAction(track);
-															}}
-															className='cyber-action flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60'>
-															{activeTrackAction === trackKey ?
-																<LoaderCircle className='h-4 w-4 animate-spin' />
-															:	<Play className='h-4 w-4 fill-current' />}
-														</button>
-														{!webAudioMode && (
-															<button
-																type='button'
-																title='Play next'
-																onClick={(event) => {
-																	event.stopPropagation();
-																	void handleTrackAction(track, true);
-																}}
-																className='rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-cyan-200/20 hover:bg-cyan-200/[0.06] active:scale-95'>
-																Next
-															</button>
-														)}
 													</div>
 												</div>
 											);
@@ -1784,11 +2424,13 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			{/* Mini Player - Mobile Only */}
 			<div
-				className='cyber-mini fixed bottom-0 left-0 right-0 z-40 flex items-center gap-3 border-t p-3 md:hidden'
+				className={`cyber-mini fixed bottom-0 left-0 right-0 z-40 flex items-center gap-3 border-t p-3 md:hidden transition-all duration-300 ${
+					hideGui ? "opacity-0 translate-y-full pointer-events-none" : "opacity-100 translate-y-0"
+				}`}
 				onClick={() => setIsPlayerOpen(true)}>
 				<div className='relative w-12 h-12 shrink-0'>
 					<img
-						src={proxyImage(stats?.track?.thumbnail ?? undefined)}
+						src={proxyImage(activeThumbnail ?? undefined)}
 						alt=''
 						className='h-full w-full rounded-lg border border-cyan-200/20 object-cover'
 					/>
@@ -1829,18 +2471,32 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 
 			{/* Now Playing Panel */}
 			<div
-				className={`cyber-now-playing relative z-10 flex shrink-0 flex-col overflow-hidden border-l border-cyan-300/10 transition-all duration-500 ease-out ${isPlayerOpen ? "fixed inset-0 h-dvh" : "hidden md:relative md:flex md:w-[clamp(320px,28vw,450px)]"}`}>
-				<div className='cyber-now-playing-content flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-6 md:gap-8 md:p-8'>
+				className={`cyber-now-playing relative z-10 flex shrink-0 flex-col overflow-hidden border-l border-cyan-300/10 transition-all duration-500 ease-out ${
+					hideGui ? "opacity-0 translate-x-full pointer-events-none" : "opacity-100 translate-x-0"
+				} ${isPlayerOpen ? "fixed inset-0 h-dvh" : "hidden md:relative md:flex md:w-[clamp(320px,28vw,450px)]"}`}>
+				<div
+					className={`cyber-now-playing-content flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-6 md:gap-8 md:p-8 ${
+						hideScrollbar ? "no-scrollbar" : "custom-scrollbar"
+					}`}>
 					<div className='flex items-start justify-between shrink-0'>
-						<button
-							onClick={() => (isPlayerOpen ? setIsPlayerOpen(false) : setShowLyrics(!showLyrics))}
-							className={`p-3 rounded-xl transition-all ${
-								showLyrics && !isPlayerOpen ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.04] text-zinc-500 hover:text-cyan-200"
-							}`}>
-							{isPlayerOpen ?
+						{isPlayerOpen ?
+							<button
+								onClick={() => setIsPlayerOpen(false)}
+								className='p-3 rounded-xl bg-white/[0.04] text-zinc-500 hover:text-cyan-200 transition-all'
+								title='Close'>
 								<SkipBack className='w-5 h-5 -rotate-90' />
-							:	<SlidersHorizontal className='w-5 h-5' />}
-						</button>
+							</button>
+						:	<button
+								type='button'
+								title='Visual & Blur Settings'
+								aria-label='Visual and blur settings'
+								onClick={() => setShowVisualSettings(true)}
+								className={`p-3 rounded-xl transition-all ${
+									showVisualSettings ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.04] text-zinc-500 hover:text-cyan-200"
+								}`}>
+								<SlidersHorizontal className='w-5 h-5' />
+							</button>
+						}
 
 						{/* Center */}
 						<div className='flex flex-col items-center flex-1 px-4'>
@@ -1855,14 +2511,57 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 							)}
 						</div>
 
-						<button
-							title='showLyrics'
-							onClick={() => setShowLyrics(!showLyrics)}
-							className={`rounded-xl bg-white/[0.04] p-3 text-zinc-500 transition-all hover:text-cyan-200 md:block ${
-								isPlayerOpen ? "block" : "hidden"
-							}`}>
-							<LayoutGrid className='w-5 h-5' />
-						</button>
+						<div className='flex items-center gap-1.5'>
+							{isPlayerOpen && (
+								<button
+									type='button'
+									title='Visual & Blur Settings'
+									onClick={() => setShowVisualSettings(true)}
+									className={`p-3 rounded-xl transition-all ${
+										showVisualSettings ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.04] text-zinc-500 hover:text-cyan-200"
+									}`}>
+									<SlidersHorizontal className='w-5 h-5' />
+								</button>
+							)}
+
+							<button
+								type='button'
+								title='Hide GUI for Video (H)'
+								aria-label='Hide GUI to watch video'
+								onClick={() => setHideGui(true)}
+								className='rounded-xl p-3 bg-white/[0.04] text-zinc-500 hover:text-cyan-200 hover:bg-cyan-300/10 transition-all'>
+								<EyeOff className='w-5 h-5' />
+							</button>
+
+							<button
+								type='button'
+								title={videoBgEnabled ? "Disable video background" : "Enable video background"}
+								onClick={() => {
+									const next = !videoBgEnabled;
+									setVideoBgEnabled(next);
+									try {
+										localStorage.setItem("ziji-video-bg", String(next));
+									} catch {}
+								}}
+								className={`rounded-xl p-3 transition-all ${
+									videoBgEnabled ?
+										"bg-cyan-300/10 text-cyan-200 border border-cyan-300/30 shadow-[0_0_12px_rgba(34,211,238,0.2)]"
+									:	"bg-white/[0.04] text-zinc-600 hover:text-zinc-400"
+								}`}>
+								{videoBgEnabled ?
+									<Video className='w-5 h-5' />
+								:	<VideoOff className='w-5 h-5' />}
+							</button>
+
+							<button
+								title='Lyrics'
+								onClick={() => setShowLyrics(!showLyrics)}
+								className={`rounded-xl p-3 transition-all ${
+									showLyrics ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.04] text-zinc-500 hover:text-cyan-200"
+								}`}>
+								<LayoutGrid className='w-5 h-5' />
+							</button>
+						</div>
 					</div>
 					<AnimatePresence mode='wait'>
 						{showLyrics ?
@@ -1871,10 +2570,24 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								initial={{ opacity: 0, y: 20 }}
 								animate={{ opacity: 1, y: 0 }}
 								exit={{ opacity: 0, y: -20 }}
-								className='cyber-card flex-grow overflow-y-auto rounded-2xl p-8 custom-scrollbar'>
-								<p className='mb-6 text-[10px] font-bold uppercase tracking-widest text-cyan-300'>Lyrics</p>
+								className={`cyber-card flex-grow overflow-y-auto rounded-2xl p-8 ${
+									hideScrollbar ? "no-scrollbar" : "custom-scrollbar"
+								}`}>
+								<div className='mb-6 flex items-center justify-between'>
+									<p className='text-[10px] font-bold uppercase tracking-widest text-cyan-300'>Lyrics</p>
+									{romanizedLyrics ?
+										<button
+											type='button'
+											onClick={() => setShowRomanized(!showRomanized)}
+											className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+												showRomanized ? "bg-cyan-300 text-[#071014]" : "bg-white/[0.06] text-zinc-400 hover:text-cyan-200"
+											}`}>
+											{showRomanized ? "Romaji" : "Original"}
+										</button>
+									:	null}
+								</div>
 								<div className='whitespace-pre-wrap font-bold text-xl leading-relaxed text-zinc-300'>
-									{lyrics || "Searching for lyrics..."}
+									{(showRomanized && romanizedLyrics ? romanizedLyrics : lyrics) || "Searching for lyrics..."}
 								</div>
 							</motion.div>
 						:	<motion.div
@@ -1883,16 +2596,30 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								animate={{ opacity: 1, scale: 1 }}
 								exit={{ opacity: 0, scale: 0.95 }}
 								className='cyber-now-playing-cover flex min-h-0 flex-grow flex-col justify-center gap-6'>
-								<div className='cyber-art-frame relative flex min-h-0 flex-1 items-center justify-center'>
+								<div className='cyber-art-frame relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl'>
 									<img
-										src={proxyImage(stats?.track?.thumbnail || botInfo?.avatars)}
+										src={proxyImage(activeThumbnail || botInfo?.avatars)}
 										alt='Album Art'
 										className='cyber-artwork h-full w-full rounded-xl object-cover'
 									/>
-									<div className='pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-md border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100 backdrop-blur'>
+									{videoCanvasMode && currentVideoUrl && !videoError && <VideoCanvas videoRef={videoBgRef} />}
+									<div className='pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-md border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100 backdrop-blur'>
 										<span className='h-1.5 w-1.5 animate-pulse rounded-full bg-lime-300' />
-										Now transmitting
+										{videoCanvasMode && currentVideoUrl && !videoError ? "Video canvas active" : "Now transmitting"}
 									</div>
+
+									{currentVideoUrl && !videoError && (
+										<button
+											type='button'
+											onClick={() => setVideoCanvasMode(!videoCanvasMode)}
+											title={videoCanvasMode ? "Switch to album cover" : "Switch to live video canvas"}
+											className='absolute top-3 right-3 z-20 flex items-center gap-1.5 rounded-lg border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-200 backdrop-blur transition-all hover:bg-cyan-300 hover:text-[#071014]'>
+											{videoCanvasMode ?
+												<Film className='h-3 w-3' />
+											:	<Video className='h-3 w-3' />}
+											<span>{videoCanvasMode ? "Cover" : "Canvas"}</span>
+										</button>
+									)}
 								</div>
 
 								<div className='min-w-0 space-y-1 px-2 text-center md:space-y-2'>
@@ -2024,6 +2751,282 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 					</div>
 				</div>
 			</div>
+
+			{/* Zen Mode Floating HUD (When GUI is hidden to watch video) */}
+			{hideGui && (
+				<div
+					className={`fixed inset-x-0 bottom-6 z-[110] flex justify-center px-4 transition-all duration-500 pointer-events-none ${
+						showZenControls ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+					}`}>
+					<div className='pointer-events-auto flex items-center gap-2 sm:gap-4 rounded-2xl border border-cyan-300/30 bg-[#080d14]/85 px-3.5 py-2.5 sm:px-5 sm:py-3 shadow-[0_12px_48px_rgba(0,0,0,0.8),0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-2xl'>
+						{/* Track info with thumbnail */}
+						{stats?.track && (
+							<div className='flex items-center gap-2.5 max-w-[150px] sm:max-w-[240px] md:max-w-[300px] min-w-0 pr-3 border-r border-white/10'>
+								{stats.track.thumbnail && (
+									<img
+										src={proxyImage(stats.track.thumbnail)}
+										alt=''
+										className='h-8 w-8 sm:h-9 sm:w-9 rounded-lg object-cover border border-cyan-300/30 shrink-0'
+									/>
+								)}
+								<div className='min-w-0'>
+									<p className='truncate text-xs font-bold text-white'>{stats.track.title}</p>
+									<p className='truncate text-[10px] font-mono text-cyan-300/70'>{stats.track.author || "Unknown"}</p>
+								</div>
+							</div>
+						)}
+
+						{/* Playback Controls */}
+						<div className='flex items-center gap-1'>
+							<button
+								type='button'
+								onClick={() => sendCommand("pause")}
+								title={stats?.paused ? "Play" : "Pause"}
+								className='cyber-play-button flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl transition-all active:scale-95'>
+								{stats?.paused ?
+									<Play className='h-3.5 w-3.5 sm:h-4 sm:w-4 fill-current' />
+								:	<Pause className='h-3.5 w-3.5 sm:h-4 sm:w-4 fill-current' />}
+							</button>
+							<button
+								type='button'
+								onClick={() => sendCommand("skip")}
+								title='Skip'
+								className='p-2 rounded-lg text-zinc-400 hover:text-cyan-200 hover:bg-white/5 transition-all'>
+								<SkipForward className='h-4 w-4' />
+							</button>
+						</div>
+
+						{/* Unhide GUI Button */}
+						<button
+							type='button'
+							onClick={() => setHideGui(false)}
+							className='flex items-center gap-2 rounded-xl bg-cyan-300 px-3.5 py-2 text-xs font-black uppercase tracking-wider text-[#080b10] shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all hover:bg-cyan-200 active:scale-95'
+							title='Show GUI (Press H or Esc)'>
+							<Eye className='h-4 w-4' />
+							<span className='hidden sm:inline'>Show GUI</span>
+							<span className='font-mono text-[10px] opacity-75 sm:hidden'>H</span>
+						</button>
+
+						{/* Fullscreen Button */}
+						<button
+							type='button'
+							onClick={toggleFullscreen}
+							className='p-2 rounded-lg text-zinc-400 hover:text-cyan-200 hover:bg-white/5 transition-all'
+							title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+							{isFullscreen ?
+								<Minimize className='h-4 w-4' />
+							:	<Maximize className='h-4 w-4' />}
+						</button>
+					</div>
+				</div>
+			)}
+
+			{/* Visual & Blur Controls Modal */}
+			<AnimatePresence>
+				{showVisualSettings && (
+					<div
+						className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm'
+						onClick={() => setShowVisualSettings(false)}>
+						<motion.div
+							initial={{ opacity: 0, scale: 0.95, y: 10 }}
+							animate={{ opacity: 1, scale: 1, y: 0 }}
+							exit={{ opacity: 0, scale: 0.95, y: 10 }}
+							onClick={(e) => e.stopPropagation()}
+							className='cyber-card relative w-full max-w-md rounded-2xl border border-cyan-300/30 p-6 shadow-2xl space-y-6'
+							style={{
+								background: "rgba(10, 15, 22, 0.96)",
+								backdropFilter: "blur(24px)",
+							}}>
+							{/* Header */}
+							<div className='flex items-center justify-between border-b border-cyan-300/10 pb-4'>
+								<div className='flex items-center gap-3'>
+									<div className='flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/30 bg-cyan-300/10'>
+										<SlidersHorizontal className='h-4 w-4 text-cyan-200' />
+									</div>
+									<div>
+										<h3 className='text-sm font-black uppercase tracking-wider text-white'>Visual & Blur Settings</h3>
+										<p className='text-[10px] font-mono text-cyan-300/70'>VISUAL & BLUR CONTROLS</p>
+									</div>
+								</div>
+								<button
+									type='button'
+									onClick={() => setShowVisualSettings(false)}
+									className='rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition-colors'
+									title='Close'>
+									<X className='h-4 w-4' />
+								</button>
+							</div>
+
+							{/* Presets */}
+							<div className='space-y-2'>
+								<p className='text-[10px] font-bold uppercase tracking-wider text-zinc-400'>Presets</p>
+								<div className='grid grid-cols-4 gap-2'>
+									{[
+										{ id: "default", label: "Default", desc: "Balanced" },
+										{ id: "cinema", label: "Cinema", desc: "Vivid Video" },
+										{ id: "glass", label: "Glass", desc: "Translucent" },
+										{ id: "focus", label: "Focus", desc: "Minimal" },
+									].map((item) => (
+										<button
+											key={item.id}
+											type='button'
+											onClick={() => applyPreset(item.id as any)}
+											className='flex flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] p-2.5 text-center transition-all hover:border-cyan-300/40 hover:bg-cyan-300/10 active:scale-95'>
+											<span className='text-xs font-bold text-white'>{item.label}</span>
+											<span className='text-[9px] text-zinc-400'>{item.desc}</span>
+										</button>
+									))}
+								</div>
+							</div>
+
+							{/* Zen mode & Scrollbars Options */}
+							<div className='space-y-2.5'>
+								<div className='flex items-center justify-between rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3'>
+									<div className='flex items-center gap-2.5'>
+										<EyeOff className='h-4 w-4 text-cyan-300' />
+										<div>
+											<p className='text-xs font-bold text-white'>Hide Interface (Video Mode)</p>
+											<p className='font-mono text-[10px] text-cyan-300/80'>Press H to toggle, Esc to exit</p>
+										</div>
+									</div>
+									<button
+										type='button'
+										onClick={() => {
+											setShowVisualSettings(false);
+											setHideGui(true);
+										}}
+										className='cyber-action rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[#080b10] transition-all active:scale-95'>
+										Enable
+									</button>
+								</div>
+
+								<div className='flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3'>
+									<div className='flex items-center gap-2.5'>
+										<Baseline className='h-4 w-4 text-zinc-400' />
+										<div>
+											<p className='text-xs font-bold text-white'>Hide Scrollbars</p>
+											<p className='text-[10px] text-zinc-400'>Clean aesthetic, wheel and touch scrolling stay smooth</p>
+										</div>
+									</div>
+									<button
+										type='button'
+										role='switch'
+										aria-checked={hideScrollbar}
+										onClick={() => updateHideScrollbar(!hideScrollbar)}
+										className={`relative h-6 w-11 rounded-full transition-colors ${
+											hideScrollbar ? "bg-cyan-400" : "bg-zinc-700"
+										}`}>
+										<span
+											className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+												hideScrollbar ? "translate-x-5" : "translate-x-0.5"
+											}`}
+										/>
+									</button>
+								</div>
+							</div>
+
+							{/* Sliders */}
+							<div className='space-y-4'>
+								{/* Background Blur */}
+								<div className='space-y-1.5'>
+									<div className='flex justify-between text-xs font-bold'>
+										<span className='text-zinc-200'>Background Blur</span>
+										<span className='font-mono text-cyan-300'>{bgBlur}px</span>
+									</div>
+									<input
+										type='range'
+										min='0'
+										max='30'
+										value={bgBlur}
+										onChange={(e) => updateBgBlur(Number(e.target.value))}
+										className='cyber-range-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800'
+									/>
+									<div className='flex justify-between text-[9px] text-zinc-400 font-mono'>
+										<span>0px (Sharp)</span>
+										<span>30px (Soft Blur)</span>
+									</div>
+								</div>
+
+								{/* Background Opacity */}
+								<div className='space-y-1.5'>
+									<div className='flex justify-between text-xs font-bold'>
+										<span className='text-zinc-200'>Background Opacity</span>
+										<span className='font-mono text-cyan-300'>{bgOpacity}%</span>
+									</div>
+									<input
+										type='range'
+										min='0'
+										max='100'
+										value={bgOpacity}
+										onChange={(e) => updateBgOpacity(Number(e.target.value))}
+										className='cyber-range-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800'
+									/>
+									<div className='flex justify-between text-[9px] text-zinc-400 font-mono'>
+										<span>0% (Hidden)</span>
+										<span>100% (Full Vivid)</span>
+									</div>
+								</div>
+
+								{/* GUI Opacity */}
+								<div className='space-y-1.5'>
+									<div className='flex justify-between text-xs font-bold'>
+										<span className='text-zinc-200'>GUI Opacity</span>
+										<span className='font-mono text-lime-300'>{guiOpacity}%</span>
+									</div>
+									<input
+										type='range'
+										min='10'
+										max='100'
+										value={guiOpacity}
+										onChange={(e) => updateGuiOpacity(Number(e.target.value))}
+										className='cyber-range-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800'
+									/>
+									<div className='flex justify-between text-[9px] text-zinc-400 font-mono'>
+										<span>10% (See-Through)</span>
+										<span>100% (Opaque)</span>
+									</div>
+								</div>
+
+								{/* GUI Backdrop Blur */}
+								<div className='space-y-1.5'>
+									<div className='flex justify-between text-xs font-bold'>
+										<span className='text-zinc-200'>GUI Glass Blur</span>
+										<span className='font-mono text-lime-300'>{guiBlur}px</span>
+									</div>
+									<input
+										type='range'
+										min='0'
+										max='30'
+										value={guiBlur}
+										onChange={(e) => updateGuiBlur(Number(e.target.value))}
+										className='cyber-range-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800'
+									/>
+									<div className='flex justify-between text-[9px] text-zinc-400 font-mono'>
+										<span>0px (Clear Glass)</span>
+										<span>30px (Frosted Glass)</span>
+									</div>
+								</div>
+							</div>
+
+							{/* Footer actions */}
+							<div className='flex items-center justify-between border-t border-white/5 pt-4'>
+								<button
+									type='button'
+									onClick={resetVisualSettings}
+									className='text-xs font-semibold text-zinc-400 hover:text-white transition-colors'>
+									Reset to Default
+								</button>
+								<button
+									type='button'
+									onClick={() => setShowVisualSettings(false)}
+									className='cyber-action rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#080b10] transition-all active:scale-95'>
+									Done
+								</button>
+							</div>
+						</motion.div>
+					</div>
+				)}
+			</AnimatePresence>
 		</div>
 	);
 }

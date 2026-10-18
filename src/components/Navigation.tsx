@@ -76,7 +76,7 @@ export function Navigation({ botInfo }: HeroProps) {
 	];
 
 	return (
-		<nav className='fixed top-0 left-0 right-0 z-50 py-4 glass border-b border-white/5'>
+		<nav className='fixed top-0 left-0 right-0 z-50 py-4 glass border-b border-white/5 transition-all duration-300'>
 			<div className='max-w-7xl mx-auto flex items-center justify-between px-6'>
 				<Link
 					to='/'

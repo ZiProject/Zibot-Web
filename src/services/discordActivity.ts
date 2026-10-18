@@ -22,33 +22,46 @@ export interface BotInfo {
 	[key: string]: any;
 }
 
+let _isActivityCached: boolean | null = null;
 export const isDiscordActivity = (): boolean => {
-	const isEmbed = window.self !== window.top;
-	const isDiscordOrigin = Boolean(window.location.ancestorOrigins?.[0]?.includes("discord.com"));
-	const result = isEmbed && isDiscordOrigin;
-
-	console.log(
-		`[DiscordUtils] isDiscordActivity check: isEmbed=${isEmbed}, isDiscordOrigin=${isDiscordOrigin} -> Result=${result}`,
-	);
-	return result;
+	if (_isActivityCached !== null) return _isActivityCached;
+	const isEmbed = typeof window !== "undefined" && window.self !== window.top;
+	const isDiscordOrigin = typeof window !== "undefined" && Boolean(window.location.ancestorOrigins?.[0]?.includes("discord.com"));
+	_isActivityCached = isEmbed && isDiscordOrigin;
+	return _isActivityCached;
 };
 
 export const getApiBase = (): string => {
 	const isActivity = isDiscordActivity();
 	const fallbackApi = import.meta.env.VITE_BotAPI || "https://api.ziji.best";
-	const result = isActivity ? "/api" : fallbackApi;
-
-	console.log(`[DiscordUtils] getApiBase: isDiscordActivity=${isActivity} -> Result=${result}`);
-	return result;
+	return isActivity ? "/api" : fallbackApi;
 };
 
 export const apiUrl = (path: string): string => {
 	const isActivity = isDiscordActivity();
-	const fallbackApi = import.meta.env.VITE_BotAPI || "https://api.ziji.best";
-	const result = isActivity ? `/api${path}` : `${fallbackApi}${path}`;
+	const fallbackApi = (import.meta.env.VITE_BotAPI || "https://api.ziji.best").replace(/\/+$/, "");
+	const cleanPath =
+		path ?
+			path.startsWith("/") ?
+				path
+			:	`/${path}`
+		:	"";
+	return (
+		isActivity ?
+			cleanPath.startsWith("/api") ?
+				cleanPath
+			:	`/api${cleanPath}`
+		:	`${fallbackApi}${cleanPath}`
+	);
+};
 
-	console.log(`[DiscordUtils] apiUrl (path: "${path}"): isDiscordActivity=${isActivity} -> Result=${result}`);
-	return result;
+export const videoStreamUrl = (track?: { url?: string | null; title?: string | null; author?: string | null } | null): string => {
+	if (!track || (!track.url && !track.title)) return "";
+	const params = new URLSearchParams();
+	if (track.url) params.set("url", track.url);
+	if (track.title) params.set("title", track.title);
+	if (track.author) params.set("author", track.author);
+	return apiUrl(`/api/stream/video?${params.toString()}`);
 };
 
 export const getWsUrl = (): string => {

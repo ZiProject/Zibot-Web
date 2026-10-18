@@ -56,7 +56,15 @@
 .cyber-player {
 	--cyber-cyan: #67e8f9;
 	--cyber-lime: #e6ff45;
-	position: relative;
+	--bg-video-opacity: 0.35;
+	--bg-video-blur: 8px;
+	--gui-opacity: 0.85;
+	--gui-blur: 16px;
+	position: fixed;
+	top: 4rem;
+	right: 0;
+	bottom: 0;
+	left: 0;
 	isolation: isolate;
 	background-color: #080b10;
 	background-image:
@@ -80,13 +88,23 @@
 
 .cyber-card {
 	border: 1px solid rgba(103, 232, 249, 0.14);
-	background: linear-gradient(135deg, rgba(19, 30, 38, 0.86), rgba(10, 14, 20, 0.84));
+	background: linear-gradient(135deg, rgba(19, 30, 38, var(--gui-opacity, 0.86)), rgba(10, 14, 20, var(--gui-opacity, 0.84)));
+	backdrop-filter: blur(var(--gui-blur, 16px));
+	-webkit-backdrop-filter: blur(var(--gui-blur, 16px));
 	box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.cyber-sidebar {
+	background-color: rgba(8, 11, 16, var(--gui-opacity, 0.85));
+	backdrop-filter: blur(var(--gui-blur, 16px));
+	-webkit-backdrop-filter: blur(var(--gui-blur, 16px));
 }
 
 .cyber-input {
 	border: 1px solid rgba(103, 232, 249, 0.16);
-	background: rgba(10, 16, 22, 0.86);
+	background: rgba(10, 16, 22, var(--gui-opacity, 0.86));
+	backdrop-filter: blur(var(--gui-blur, 16px));
+	-webkit-backdrop-filter: blur(var(--gui-blur, 16px));
 	color: #f4f7f8;
 }
 
@@ -119,16 +137,25 @@
 
 .cyber-row {
 	border: 1px solid transparent;
+	background: rgba(15, 23, 32, calc(var(--gui-opacity, 0.85) * 0.45));
+	backdrop-filter: blur(var(--gui-blur, 16px));
+	-webkit-backdrop-filter: blur(var(--gui-blur, 16px));
 }
 
 .cyber-row:hover {
 	border-color: rgba(103, 232, 249, 0.16);
-	background: rgba(103, 232, 249, 0.045);
+	background: rgba(103, 232, 249, 0.08);
 }
 
 .cyber-now-playing {
-	background: linear-gradient(180deg, rgba(13, 20, 27, 0.97), rgba(7, 10, 15, 0.99));
+	background: linear-gradient(180deg, rgba(13, 20, 27, var(--gui-opacity, 0.97)), rgba(7, 10, 15, var(--gui-opacity, 0.99)));
+	backdrop-filter: blur(var(--gui-blur, 16px));
+	-webkit-backdrop-filter: blur(var(--gui-blur, 16px));
 	box-shadow: -24px 0 60px rgba(0, 0, 0, 0.2);
+}
+
+.cyber-range-slider {
+	accent-color: #e6ff45;
 }
 
 .cyber-now-playing-content {
@@ -227,6 +254,85 @@
 .cyber-volume {
 	border-color: rgba(103, 232, 249, 0.12);
 	background: rgba(255, 255, 255, 0.025);
+}
+
+/* Custom, subtle, and hidden scrollbars */
+.no-scrollbar {
+	-ms-overflow-style: none !important;
+	scrollbar-width: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+	display: none !important;
+}
+
+.custom-scrollbar {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(103, 232, 249, 0.25) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+	width: 5px;
+	height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+	background: rgba(103, 232, 249, 0.2);
+	border-radius: 9999px;
+	transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+	background: rgba(103, 232, 249, 0.55);
+}
+
+/* Ensure no native Windows white scrollbars inside cyber-player */
+.cyber-player * {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(103, 232, 249, 0.2) transparent;
+}
+
+.cyber-player *::-webkit-scrollbar {
+	width: 5px;
+	height: 5px;
+}
+
+.cyber-player *::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.cyber-player *::-webkit-scrollbar-thumb {
+	background: rgba(103, 232, 249, 0.2);
+	border-radius: 9999px;
+}
+
+.cyber-player *::-webkit-scrollbar-thumb:hover {
+	background: rgba(103, 232, 249, 0.5);
+}
+
+/* Force-hide all scrollbars when hide-scrollbars is active */
+.cyber-hide-scrollbars * {
+	-ms-overflow-style: none !important;
+	scrollbar-width: none !important;
+}
+
+.cyber-hide-scrollbars *::-webkit-scrollbar {
+	display: none !important;
+}
+
+/* Hide navigation/header completely in Zen Video Mode */
+body.cyber-zen-mode nav.fixed,
+body:has(.cyber-player-zen) nav.fixed {
+	opacity: 0 !important;
+	pointer-events: none !important;
+	transform: translateY(-100%) !important;
+	transition:
+		opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+		transform 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

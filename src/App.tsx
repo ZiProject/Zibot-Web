@@ -23,6 +23,7 @@ function AppContent() {
 	const location = useLocation();
 	const { t } = useLanguage();
 	const isMinimized = useIsMinimized();
+	const isMusicRoute = location.pathname.startsWith("/dashboard/music");
 
 	// Scroll to top on route change
 	useEffect(() => {
@@ -104,7 +105,7 @@ function AppContent() {
 				</Routes>
 			</main>
 
-			{!isMinimized && (
+			{!isMinimized && !isMusicRoute && (
 				<footer className='mt-20 py-10 border-t border-white/5 px-6'>
 					<div className='max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-[10px] uppercase font-bold tracking-[0.2em] text-zinc-600'>
 						<div className='flex gap-10'>
