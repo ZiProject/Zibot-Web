@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { WebAudioClient } from "@ziplayer/client";
+import { WebAudioClient, getFrequencyBands, getBassEnergy } from "@ziplayer/client";
 import { apiUrl, getWsUrl, isDiscordActivity, proxyImage, useIsMinimized, videoStreamUrl } from "../services/discordActivity";
 import {
 	Play,
@@ -194,6 +194,196 @@ function VideoCanvas({ videoRef }: { videoRef: React.RefObject<HTMLVideoElement 
 	);
 }
 
+interface AudioVisualizerCanvasProps {
+	analyser: AnalyserNode | null;
+	mode: "bars" | "wave";
+	active: boolean;
+	onBassPunch?: (punch: number) => void;
+}
+
+function AudioVisualizerCanvas({ analyser, mode, active, onBassPunch }: AudioVisualizerCanvasProps) {
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const rawBandsBufferRef = useRef<Float32Array | null>(null);
+	const smoothedBarsRef = useRef<Float32Array | null>(null);
+	const peaksRef = useRef<Float32Array | null>(null);
+	const bassSmoothRef = useRef(0);
+
+	useEffect(() => {
+		let animId: number;
+		const canvas = canvasRef.current;
+		if (!canvas) return;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+
+		const binCount = analyser?.frequencyBinCount ?? 1024;
+		const timeBuffer = new Uint8Array(binCount);
+
+		const render = () => {
+			const dpr = Math.min(window.devicePixelRatio || 1, 2);
+			const rect = canvas.getBoundingClientRect();
+			const targetWidth = Math.floor(rect.width * dpr);
+			const targetHeight = Math.floor(rect.height * dpr);
+
+			if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+				if (targetWidth > 0 && targetHeight > 0) {
+					canvas.width = targetWidth;
+					canvas.height = targetHeight;
+				}
+			}
+
+			const width = canvas.width / dpr;
+			const height = canvas.height / dpr;
+
+			ctx.save();
+			ctx.scale(dpr, dpr);
+			ctx.clearRect(0, 0, width, height);
+
+			if (analyser && active) {
+				// Accurate sub-bass & kick drum energy via @ziplayer/client getBassEnergy helper
+				const bassRaw = getBassEnergy(analyser, { minHz: 45, maxHz: 120 });
+				if (bassRaw > bassSmoothRef.current) {
+					bassSmoothRef.current = bassSmoothRef.current * 0.2 + bassRaw * 0.8;
+				} else {
+					bassSmoothRef.current = bassSmoothRef.current * 0.92;
+				}
+				const punch = Math.pow(bassSmoothRef.current, 1.5);
+				onBassPunch?.(punch);
+
+				if (mode === "bars") {
+					const barCount = Math.min(52, Math.max(28, Math.floor(width / 8.5)));
+					const spacing = 3;
+					const totalSpacing = spacing * (barCount - 1);
+					const barWidth = Math.max(2, (width - totalSpacing) / barCount);
+					const maxBarHeight = height * 0.82;
+
+					if (!rawBandsBufferRef.current || rawBandsBufferRef.current.length !== barCount) {
+						rawBandsBufferRef.current = new Float32Array(barCount);
+						smoothedBarsRef.current = new Float32Array(barCount);
+						peaksRef.current = new Float32Array(barCount);
+					}
+
+					// Use @ziplayer/client getFrequencyBands helper with zero-allocation outputBuffer
+					getFrequencyBands(analyser, {
+						bands: barCount,
+						minHz: 28,
+						maxHz: 16000,
+						outputBuffer: rawBandsBufferRef.current,
+					});
+
+					const bands = rawBandsBufferRef.current;
+					const currentBars = smoothedBarsRef.current!;
+					const peaks = peaksRef.current!;
+
+					for (let i = 0; i < barCount; i++) {
+						const targetHeight = bands[i] * maxBarHeight;
+						const current = currentBars[i];
+
+						if (targetHeight > current) {
+							// Fast attack: quickly respond to transients
+							currentBars[i] = current * 0.25 + targetHeight * 0.75;
+						} else {
+							// Exponential smooth falloff
+							currentBars[i] = Math.max(3, current * 0.86);
+						}
+
+						const barHeight = Math.max(3, currentBars[i]);
+						const x = i * (barWidth + spacing);
+						const y = height - barHeight;
+
+						// Peak hold with gravity
+						if (barHeight >= peaks[i]) {
+							peaks[i] = barHeight;
+						} else {
+							peaks[i] = Math.max(0, peaks[i] - 1.5);
+						}
+
+						// Draw Cyberpunk Gradient Bar
+						const grad = ctx.createLinearGradient(0, height, 0, y);
+						grad.addColorStop(0, "rgba(6, 182, 212, 0.22)"); // cyan-500
+						grad.addColorStop(0.55, "rgba(34, 211, 238, 0.85)"); // cyan-400
+						grad.addColorStop(1, "rgba(190, 242, 100, 0.95)"); // lime-300
+						ctx.fillStyle = grad;
+
+						const radius = Math.min(barWidth / 2, 2.5);
+						if (typeof ctx.roundRect === "function") {
+							ctx.beginPath();
+							ctx.roundRect(x, y, barWidth, barHeight, [radius, radius, 0, 0]);
+							ctx.fill();
+						} else {
+							ctx.fillRect(x, y, barWidth, barHeight);
+						}
+
+						// Draw Peak Cap Line
+						if (peaks[i] > 4) {
+							const peakY = height - peaks[i];
+							ctx.fillStyle = "rgba(244, 114, 182, 0.95)"; // pink-400
+							ctx.fillRect(x, Math.max(0, peakY - 2), barWidth, 2);
+						}
+					}
+				} else if (mode === "wave") {
+					// Draw Smooth Bezier Oscilloscope Waveform
+					analyser.getByteTimeDomainData(timeBuffer);
+					ctx.lineWidth = 2.5;
+					ctx.strokeStyle = "rgba(34, 211, 238, 0.95)";
+					ctx.shadowColor = "rgba(34, 211, 238, 0.8)";
+					ctx.shadowBlur = 12;
+
+					const pointsCount = Math.min(128, binCount);
+					const step = Math.floor(binCount / pointsCount);
+					const sliceWidth = width / (pointsCount - 1);
+
+					const points: { x: number; y: number }[] = [];
+					for (let i = 0; i < pointsCount; i++) {
+						const sampleIdx = Math.min(binCount - 1, i * step);
+						const v = timeBuffer[sampleIdx] / 128.0;
+						const y = (v * height) / 2;
+						points.push({ x: i * sliceWidth, y });
+					}
+
+					ctx.beginPath();
+					if (points.length > 0) {
+						ctx.moveTo(points[0].x, points[0].y);
+						for (let i = 0; i < points.length - 1; i++) {
+							const xc = (points[i].x + points[i + 1].x) / 2;
+							const yc = (points[i].y + points[i + 1].y) / 2;
+							ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+						}
+						ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+					}
+					ctx.stroke();
+					ctx.shadowBlur = 0;
+				}
+			} else {
+				// Standby idle mode: subtle cyber breathing sine wave
+				onBassPunch?.(0);
+				const time = Date.now() * 0.002;
+				ctx.lineWidth = 1.5;
+				ctx.strokeStyle = "rgba(34, 211, 238, 0.35)";
+				ctx.beginPath();
+				for (let x = 0; x < width; x += 4) {
+					const y = height / 2 + Math.sin(x * 0.02 + time) * 6;
+					if (x === 0) ctx.moveTo(x, y);
+					else ctx.lineTo(x, y);
+				}
+				ctx.stroke();
+			}
+
+			ctx.restore();
+			animId = requestAnimationFrame(render);
+		};
+
+		animId = requestAnimationFrame(render);
+		return () => cancelAnimationFrame(animId);
+	}, [analyser, mode, active, onBassPunch]);
+
+	return (
+		<canvas
+			ref={canvasRef}
+			className='pointer-events-none absolute inset-x-0 bottom-0 z-15 h-32 w-full object-cover'
+		/>
+	);
+}
+
 export function MusicPlayerView({ botInfo }: HeroProps) {
 	const { t } = useLanguage();
 	const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -238,6 +428,15 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		}
 	});
 	const [videoCanvasMode, setVideoCanvasMode] = useState(false);
+	const [visualizerMode, setVisualizerMode] = useState<"bars" | "wave" | "off">(() => {
+		try {
+			const saved = localStorage.getItem("ziji-visualizer-mode");
+			if (saved === "bars" || saved === "wave" || saved === "off") return saved;
+		} catch {}
+		return "bars";
+	});
+	const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
+	const audioReactRef = useRef<HTMLDivElement | null>(null);
 	const [videoError, setVideoError] = useState(false);
 	const [videoLoaded, setVideoLoaded] = useState(false);
 	const [miniVideoLoaded, setMiniVideoLoaded] = useState(false);
@@ -624,9 +823,20 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 	};
 
 	const getWebAudioClient = () => {
-		if (webAudioClient.current) return webAudioClient.current;
+		if (webAudioClient.current) {
+			if (webAudioClient.current.analyser && !audioAnalyser) {
+				setAudioAnalyser(webAudioClient.current.analyser);
+			}
+			return webAudioClient.current;
+		}
 
 		const client = new WebAudioClient({
+			analyserOptions: {
+				fftSize: 2048,
+				smoothingTimeConstant: 0.65,
+				minDecibels: -85,
+				maxDecibels: -10,
+			},
 			webSocketFactory: (clientUrl) => {
 				const authToken = clientUrl.searchParams.get("token");
 				if (!authToken) throw new Error("Web audio authentication token is missing");
@@ -638,6 +848,11 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		});
 		client.addEventListener("statechange", ({ detail }) => {
 			setWebAudioConnected(detail.state !== "disconnected");
+			if (detail.state === "playing" || detail.state === "connected") {
+				setAudioAnalyser(client.analyser);
+			} else if (detail.state === "disconnected") {
+				setAudioAnalyser(null);
+			}
 			if (detail.state === "playing") setWebAudioStatus("Playing in browser");
 			else if (detail.state === "waiting") setWebAudioStatus("Waiting for audio stream");
 			else if (detail.state === "connected") setWebAudioStatus("Connected; waiting for playback");
@@ -1182,6 +1397,14 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 		},
 		[],
 	);
+
+	useEffect(() => {
+		if (webStreamActive && webAudioClient.current?.analyser) {
+			setAudioAnalyser(webAudioClient.current.analyser);
+		} else if (!webStreamActive) {
+			setAudioAnalyser(null);
+		}
+	}, [webStreamActive]);
 
 	const handleJoinVoice = async () => {
 		if (!token) {
@@ -2597,29 +2820,97 @@ export function MusicPlayerView({ botInfo }: HeroProps) {
 								exit={{ opacity: 0, scale: 0.95 }}
 								className='cyber-now-playing-cover flex min-h-0 flex-grow flex-col justify-center gap-6'>
 								<div className='cyber-art-frame relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl'>
+									{/* Audio React Aura / Ambient Glow */}
+									<div
+										ref={audioReactRef}
+										className='pointer-events-none absolute inset-0 z-10 rounded-xl transition-all duration-75 ease-out'
+										style={{ opacity: 0 }}
+									/>
+
 									<img
 										src={proxyImage(activeThumbnail || botInfo?.avatars)}
 										alt='Album Art'
 										className='cyber-artwork h-full w-full rounded-xl object-cover'
 									/>
 									{videoCanvasMode && currentVideoUrl && !videoError && <VideoCanvas videoRef={videoBgRef} />}
+
+									{/* Audio Spectrum / Waveform Visualizer */}
+									{visualizerMode !== "off" && (
+										<div className='pointer-events-none absolute inset-x-0 bottom-0 z-15 h-32 w-full bg-gradient-to-t from-[#071014]/90 via-[#071014]/40 to-transparent'>
+											<AudioVisualizerCanvas
+												analyser={audioAnalyser}
+												mode={visualizerMode}
+												active={webStreamActive}
+												onBassPunch={(punch) => {
+													const el = audioReactRef.current;
+													if (el) {
+														if (punch > 0.02) {
+															el.style.opacity = String(0.25 + punch * 0.65);
+															el.style.boxShadow = `inset 0 0 ${35 + punch * 45}px rgba(34, 211, 238, ${0.3 + punch * 0.5}), 0 0 ${15 + punch * 35}px rgba(168, 85, 247, ${punch * 0.4})`;
+															el.style.transform = `scale(${1 + punch * 0.035})`;
+														} else {
+															el.style.opacity = "0";
+															el.style.transform = "scale(1)";
+														}
+													}
+												}}
+											/>
+										</div>
+									)}
+
 									<div className='pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-md border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100 backdrop-blur'>
 										<span className='h-1.5 w-1.5 animate-pulse rounded-full bg-lime-300' />
-										{videoCanvasMode && currentVideoUrl && !videoError ? "Video canvas active" : "Now transmitting"}
+										{videoCanvasMode && currentVideoUrl && !videoError ?
+											"Video canvas active"
+										: visualizerMode !== "off" && webStreamActive ?
+											`Audio ${visualizerMode} active`
+										:	"Now transmitting"}
 									</div>
 
-									{currentVideoUrl && !videoError && (
+									<div className='absolute top-3 right-3 z-20 flex items-center gap-1.5'>
 										<button
 											type='button'
-											onClick={() => setVideoCanvasMode(!videoCanvasMode)}
-											title={videoCanvasMode ? "Switch to album cover" : "Switch to live video canvas"}
-											className='absolute top-3 right-3 z-20 flex items-center gap-1.5 rounded-lg border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-200 backdrop-blur transition-all hover:bg-cyan-300 hover:text-[#071014]'>
-											{videoCanvasMode ?
-												<Film className='h-3 w-3' />
-											:	<Video className='h-3 w-3' />}
-											<span>{videoCanvasMode ? "Cover" : "Canvas"}</span>
+											onClick={() => {
+												setVisualizerMode((prev) => {
+													const next =
+														prev === "bars" ? "wave"
+														: prev === "wave" ? "off"
+														: "bars";
+													try {
+														localStorage.setItem("ziji-visualizer-mode", next);
+													} catch {}
+													return next;
+												});
+											}}
+											title={`Visualizer: ${visualizerMode.toUpperCase()} (Click to toggle)`}
+											className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur transition-all ${
+												visualizerMode !== "off" ?
+													"border-cyan-300/40 bg-cyan-950/70 text-cyan-200 hover:bg-cyan-300 hover:text-[#071014]"
+												:	"border-cyan-200/20 bg-[#071014]/80 text-zinc-400 hover:bg-white/10 hover:text-white"
+											}`}>
+											<Activity className={`h-3 w-3 ${visualizerMode !== "off" ? "text-cyan-300 animate-pulse" : ""}`} />
+											<span>
+												{visualizerMode === "bars" ?
+													"Bars"
+												: visualizerMode === "wave" ?
+													"Wave"
+												:	"Visualizer"}
+											</span>
 										</button>
-									)}
+
+										{currentVideoUrl && !videoError && (
+											<button
+												type='button'
+												onClick={() => setVideoCanvasMode(!videoCanvasMode)}
+												title={videoCanvasMode ? "Switch to album cover" : "Switch to live video canvas"}
+												className='flex items-center gap-1.5 rounded-lg border border-cyan-200/20 bg-[#071014]/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-200 backdrop-blur transition-all hover:bg-cyan-300 hover:text-[#071014]'>
+												{videoCanvasMode ?
+													<Film className='h-3 w-3' />
+												:	<Video className='h-3 w-3' />}
+												<span>{videoCanvasMode ? "Cover" : "Canvas"}</span>
+											</button>
+										)}
+									</div>
 								</div>
 
 								<div className='min-w-0 space-y-1 px-2 text-center md:space-y-2'>
